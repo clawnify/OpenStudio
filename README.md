@@ -2,6 +2,8 @@
 
 # Open Studio
 
+[![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/open-studio)
+
 A visual AI image generation studio with a justified gallery and node-based workflow editor. Built with **Preact + Tailwind CSS + Hono + D1**. Deploys to Cloudflare Workers via [Clawnify](https://clawnify.com).
 
 ## Features
