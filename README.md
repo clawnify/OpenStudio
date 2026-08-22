@@ -1,6 +1,6 @@
-<img src="readme-banner.png" alt="Open Studio preview" width="100%" />
+<img src="readme-banner.png" alt="OpenStudio preview" width="100%" />
 
-# Open Studio
+# OpenStudio
 
 [![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/open-studio)
 
