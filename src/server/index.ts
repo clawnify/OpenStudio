@@ -5,7 +5,7 @@ import { initUploads, putUpload, getUpload, deleteUpload, readUploadAsBase64Data
 type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; ANTHROPIC_API_KEY?: string } };
 
 const app = createApp<Env>({
-  title: "Open Studio",
+  title: "OpenStudio",
   version: "1.0.0",
   description: "Node-based AI image workflow studio — generate, analyze, refine, and upscale images.",
 });
@@ -1851,7 +1851,7 @@ publicApp.openapi(executeWorkflow, async (c) => {
 
 const publicSpec = {
   openapi: "3.0.0" as const,
-  info: { title: "Open Studio API", version: "1.0.0" },
+  info: { title: "OpenStudio API", version: "1.0.0" },
 };
 
 publicApp.doc("/openapi.json", publicSpec);
