@@ -2,7 +2,7 @@
 
 # OpenStudio
 
-[![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/open-studio)
+[![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/OpenStudio)
 
 A visual AI image generation studio with a justified gallery and node-based workflow editor. Built with **Preact + Tailwind CSS + Hono + D1**. Deploys to Cloudflare Workers via [Clawnify](https://clawnify.com).
 
@@ -24,7 +24,7 @@ A visual AI image generation studio with a justified gallery and node-based work
 ## Quickstart
 
 ```bash
-git clone https://github.com/clawnify/open-studio.git
+git clone https://github.com/clawnify/OpenStudio.git
 cd open-studio
 pnpm install
 ```
