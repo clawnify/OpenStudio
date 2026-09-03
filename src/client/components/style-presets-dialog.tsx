@@ -229,7 +229,7 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
                 />
               </div>
               <p className="text-[10px] text-muted leading-relaxed">
-                References anchor the look. Not every model accepts them — those that don't still get the written direction and palette.
+                References anchor the look. They are sent only to models that accept reference images; the rest still get the written direction and palette.
               </p>
             </div>
           </div>

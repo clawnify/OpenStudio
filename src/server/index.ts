@@ -298,6 +298,7 @@ function toStylePreset(row: StylePresetRow): z.infer<typeof StylePresetSchema> {
 async function applyStylePreset(
   db: D1Database,
   presetId: string | undefined,
+  model: string,
   prompt: string,
   inputImages: string[] | undefined,
 ): Promise<{ prompt: string; input_images: string[] | undefined }> {
@@ -310,16 +311,18 @@ async function applyStylePreset(
   const palette = parseStringArray(preset.palette);
   const refs = parseStringArray(preset.reference_images);
 
+  const useRefs = refs.length > 0 && acceptsStyleReferences(model, !!inputImages?.length);
+
   const guide: string[] = [];
   if (preset.instruction.trim()) guide.push(preset.instruction.trim());
   if (palette.length) guide.push(`Use this colour palette: ${palette.join(", ")}.`);
-  if (refs.length) guide.push("Match the style, palette and treatment of the reference image(s) provided. Do not copy their subject matter.");
+  if (useRefs) guide.push("Match the style, palette and treatment of the reference image(s) provided. Do not copy their subject matter.");
 
   const styled = guide.length
     ? `${prompt}\n\nStyle guide "${preset.name}" (apply consistently): ${guide.join(" ")}`
     : prompt;
 
-  const images = [...refs, ...(inputImages || [])];
+  const images = [...(useRefs ? refs : []), ...(inputImages || [])];
   return { prompt: styled, input_images: images.length ? images : undefined };
 }
 
@@ -913,6 +916,23 @@ async function generateImageOpenRouter(
  * (the default for every other model). Throws on missing keys / unsupported
  * combinations so callers surface a clear error.
  */
+/**
+ * Whether a preset's reference images can be attached to this request.
+ *
+ * `input_images` is not a neutral field — routeImageGeneration branches on it:
+ * fal models reject a non-empty list outright, and OpenAI-direct models switch
+ * from generate to edit. Silently inheriting either would turn "apply a style"
+ * into a hard error or a different API call, so preset references are dropped
+ * where they would do that. The written direction and palette still apply.
+ */
+function acceptsStyleReferences(model: string, callerSuppliedImages: boolean): boolean {
+  // Text-to-image only — any reference image is a hard error.
+  if (FAL_IMAGE_MODELS.has(model)) return false;
+  // Safe only when the request is already an edit; otherwise refs would flip it.
+  if (OPENAI_DIRECT_MODELS.has(model)) return callerSuppliedImages;
+  return true;
+}
+
 async function routeImageGeneration(
   env: Env["Bindings"],
   params: {
@@ -996,7 +1016,7 @@ const generateImage = createRoute({
 app.openapi(generateImage, async (c) => {
   const { prompt, model, aspect_ratio, image_size, quality, input_images, style_preset_id } = c.req.valid("json");
   try {
-    const styled = await applyStylePreset(c.env.DB, style_preset_id, prompt, input_images);
+    const styled = await applyStylePreset(c.env.DB, style_preset_id, model, prompt, input_images);
     const result = await routeImageGeneration(c.env, {
       model, prompt: styled.prompt, aspect_ratio, image_size, quality, input_images: styled.input_images,
     });

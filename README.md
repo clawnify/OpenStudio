@@ -12,7 +12,7 @@ A visual AI image generation studio with a justified gallery and node-based work
 - **Justified gallery** — generated images displayed in a pixel-perfect justified layout preserving aspect ratios
 - **Image-to-image** — drag a generated image or upload a file as source for the next generation
 - **Node-based workflows** — React Flow editor for building reusable multi-step generation pipelines
-- **Style presets** — save a look once (written direction, hex palette, reference images) and reuse it across every workflow, from a Style node on the canvas or the Quick Generate bar
+- **Style presets** — save a look once (written direction, hex palette, reference images) and reuse it across every workflow, from a Style node on the canvas or the Quick Generate bar. Reference images are sent only to models that accept them; the rest still get the written direction and palette
 - **Prompt variables** — type `/` in a prompt node to reference another prompt's content with `{{}}` syntax, rendered as inline pills
 - **Auto-naming** — prompt nodes automatically get a descriptive title via Gemini 3.1 Flash Lite on blur
 - **Editable titles** — double-click any node title to rename it
