@@ -8,7 +8,7 @@ import {
   type Connection,
 } from "@xyflow/react";
 import { api } from "../api";
-import type { Workflow, ModelOption, Generation, WorkflowRun } from "../types";
+import type { Workflow, ModelOption, Generation, WorkflowRun, StylePreset } from "../types";
 import type { WorkflowContextValue, LeafResult, Features } from "../context";
 
 let nodeIdCounter = 0;
@@ -75,6 +75,7 @@ export function useWorkflowState(): WorkflowContextValue {
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [stylePresets, setStylePresets] = useState<StylePreset[]>([]);
   const [features, setFeatures] = useState<Features>({ openrouter: false, openai: false, fal: false, anthropic: false });
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [lastRunResults, setLastRunResults] = useState<LeafResult[]>([]);
@@ -161,13 +162,15 @@ export function useWorkflowState(): WorkflowContextValue {
   useEffect(() => {
     (async () => {
       try {
-        const [wf, m, feat] = await Promise.all([
+        const [wf, m, feat, sp] = await Promise.all([
           api<Workflow[]>("GET", "/api/workflows"),
           api<ModelOption[]>("GET", "/api/models"),
           api<Features>("GET", "/api/features"),
+          api<StylePreset[]>("GET", "/api/style-presets"),
         ]);
         setModels(m);
         setFeatures(feat);
+        setStylePresets(sp);
         setWorkflows(wf);
         // No auto-load: the URL (/workflows/:id) drives which workflow is
         // active. The list + /generate render without a loaded canvas.
@@ -292,6 +295,43 @@ export function useWorkflowState(): WorkflowContextValue {
     }
   }, [loadWorkflow]);
 
+  const refreshStylePresets = useCallback(async () => {
+    try {
+      setStylePresets(await api<StylePreset[]>("GET", "/api/style-presets"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  const saveStylePreset = useCallback(async (
+    preset: Pick<StylePreset, "name" | "instruction" | "palette" | "reference_images"> & { id?: string },
+  ) => {
+    const { id, ...body } = preset;
+    try {
+      const saved = id
+        ? await api<StylePreset>("PUT", `/api/style-presets/${id}`, body)
+        : await api<StylePreset>("POST", "/api/style-presets", body);
+      setStylePresets((prev) => {
+        const rest = prev.filter((p) => p.id !== saved.id);
+        return [saved, ...rest];
+      });
+      return saved;
+    } catch (e) {
+      setError(String(e));
+      return undefined;
+    }
+  }, []);
+
+  const deleteStylePreset = useCallback(async (id: string) => {
+    setStylePresets((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await api("DELETE", `/api/style-presets/${id}`);
+    } catch (e) {
+      setError(String(e));
+      await refreshStylePresets();
+    }
+  }, [refreshStylePresets]);
+
   const onConnect = useCallback((connection: Connection) => {
     pushHistory();
     setEdges((eds) => addEdge({ ...connection, animated: true }, eds));
@@ -317,6 +357,9 @@ export function useWorkflowState(): WorkflowContextValue {
           break;
         case "imageInput":
           data = { label: "Image Input", imageUrl: "" };
+          break;
+        case "style":
+          data = { label: "Style", presetId: "" };
           break;
         case "analyze":
           data = { label: "Analyze", prompt: "Describe what you see.", model: "~google/gemini-flash-latest", outputFormat: "text", status: "idle" };
@@ -394,7 +437,10 @@ export function useWorkflowState(): WorkflowContextValue {
 
   // ── Workflow execution engine ──────────────────────────────────
 
-  type ExecOutputs = Map<string, { text?: string; promptText?: string; imageUrl?: string; imageUrls?: string[] }>;
+  // `stylePresetId` is its own channel: a style node must not leak into the
+  // text or image channels, or it would be read as prompt copy / an edit source.
+  type ExecOutputValue = { text?: string; promptText?: string; imageUrl?: string; imageUrls?: string[]; stylePresetId?: string };
+  type ExecOutputs = Map<string, ExecOutputValue>;
 
   const executeNode = useCallback(async (
     nodeId: string,
@@ -411,6 +457,8 @@ export function useWorkflowState(): WorkflowContextValue {
         let inputText = "";
         let inputPromptText = "";
         const inputImages: string[] = [];
+        // Last wired style node wins if several are connected to one node.
+        let stylePresetId: string | undefined;
         for (const edge of incoming) {
           const out = outputs.get(edge.source);
           if (out?.text) inputText += (inputText ? "\n" : "") + out.text;
@@ -419,6 +467,7 @@ export function useWorkflowState(): WorkflowContextValue {
           }
           if (out?.imageUrl) inputImages.push(out.imageUrl);
           if (out?.imageUrls) inputImages.push(...out.imageUrls);
+          if (out?.stylePresetId) stylePresetId = out.stylePresetId;
         }
 
         const data = node.data as Record<string, unknown>;
@@ -447,6 +496,12 @@ export function useWorkflowState(): WorkflowContextValue {
             outputs.set(nodeId, { imageUrl: (data.imageUrl as string) || "" });
             break;
           }
+          case "style": {
+            // Pass the id, not the resolved text — the server owns the
+            // expansion so canvas, Quick Generate and the public API agree.
+            outputs.set(nodeId, { stylePresetId: (data.presetId as string) || undefined });
+            break;
+          }
           case "generateImage": {
             const basePrompt = inputText || inputPromptText || "A beautiful image";
             const feedback = ((data.feedback as string) || "").trim();
@@ -464,7 +519,7 @@ export function useWorkflowState(): WorkflowContextValue {
               const result = await api<{ images: Array<{ url: string }>; text?: string }>(
                 "POST",
                 "/api/generate",
-                { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, quality, input_images: inputImages.length ? inputImages : undefined }
+                { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, quality, input_images: inputImages.length ? inputImages : undefined, style_preset_id: stylePresetId }
               );
 
               const img = result.images[0];
@@ -858,7 +913,8 @@ export function useWorkflowState(): WorkflowContextValue {
         const src = nodeMap.get(edge.source);
         if (!src) continue;
         const d = src.data as Record<string, unknown>;
-        const out: { text?: string; promptText?: string; imageUrl?: string; imageUrls?: string[] } = {};
+        const out: ExecOutputValue = {};
+        if (src.type === "style") out.stylePresetId = (d.presetId as string) || undefined;
 
         // For prompt nodes, recursively resolve {{nodeId}} pill references
         // against the current canvas — single-node re-runs don't have a
@@ -949,7 +1005,8 @@ export function useWorkflowState(): WorkflowContextValue {
         const src = nodeMap.get(edge.source);
         if (!src) continue;
         const d = src.data as Record<string, unknown>;
-        const out: { text?: string; promptText?: string; imageUrl?: string; imageUrls?: string[] } = {};
+        const out: ExecOutputValue = {};
+        if (src.type === "style") out.stylePresetId = (d.presetId as string) || undefined;
         const txt = src.type === "prompt" ? resolvePromptText(edge.source, 0) : ((d.text as string) || (d.result as string));
         if (txt) out.text = txt;
         const img = d.imageUrl as string;
@@ -1000,6 +1057,10 @@ export function useWorkflowState(): WorkflowContextValue {
     setLastRunResults,
     models,
     features,
+    stylePresets,
+    refreshStylePresets,
+    saveStylePreset,
+    deleteStylePreset,
     generations,
     refreshGenerations,
     deleteGeneration,
