@@ -32,6 +32,23 @@ export interface WorkflowRun {
   completed_at: string | null;
 }
 
+/**
+ * A reusable style definition. Applied to a generation by id — the server
+ * expands it into the prompt (instruction + palette) and prepends its
+ * reference images to `input_images`, so every consumer composes identically.
+ */
+export interface StylePreset {
+  id: string;
+  name: string;
+  instruction: string;
+  /** Hex colours, e.g. ["#0f172a", "#f97316"]. */
+  palette: string[];
+  /** Image URLs handed to the model as visual references. */
+  reference_images: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ModelOption {
   id: string;
   name: string;
@@ -66,6 +83,12 @@ export interface GenerateNodeData {
   lastPrompt?: string;
   /** USD billed for the last successful generation on this node. */
   lastCostUsd?: number;
+}
+
+export interface StyleNodeData {
+  label: string;
+  /** Empty until a preset is picked; generation then runs unstyled. */
+  presetId: string;
 }
 
 export interface ImageInputNodeData {
@@ -116,6 +139,7 @@ export interface RefineNodeData {
 export type FlowNodeData =
   | PromptNodeData
   | GenerateNodeData
+  | StyleNodeData
   | ImageInputNodeData
   | OutputNodeData
   | AnalyzeNodeData

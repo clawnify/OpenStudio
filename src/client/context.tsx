@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { Workflow, ModelOption, Generation } from "./types";
+import type { Workflow, ModelOption, Generation, StylePreset } from "./types";
 import type { CostUnit } from "./cost";
 import type { Node, Edge, Viewport } from "@xyflow/react";
 
@@ -56,6 +56,16 @@ export interface WorkflowContextValue {
 
   // Which providers/features are available based on configured env keys.
   features: Features;
+
+  // Style presets — reusable "lock your style once" definitions, shared by
+  // the canvas style node and Quick Generate.
+  stylePresets: StylePreset[];
+  refreshStylePresets: () => Promise<void>;
+  /** Create (no id) or update (id) a preset. Returns the saved row, or undefined on failure. */
+  saveStylePreset: (
+    preset: Pick<StylePreset, "name" | "instruction" | "palette" | "reference_images"> & { id?: string },
+  ) => Promise<StylePreset | undefined>;
+  deleteStylePreset: (id: string) => Promise<void>;
 
   // Generations
   generations: Generation[];

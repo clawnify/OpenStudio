@@ -52,6 +52,15 @@ function ensureSchema(db: D1Database): Promise<void> {
       `ALTER TABLE generations ADD COLUMN run_id TEXT`,
       `ALTER TABLE generations ADD COLUMN cost_usd REAL`,
       `CREATE INDEX IF NOT EXISTS idx_generations_run ON generations(run_id)`,
+      `CREATE TABLE IF NOT EXISTS style_presets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT 'Untitled Style',
+        instruction TEXT NOT NULL DEFAULT '',
+        palette TEXT NOT NULL DEFAULT '[]',
+        reference_images TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
     ];
     for (const sql of statements) {
       try {
@@ -74,6 +83,16 @@ const WorkflowSchema = z.object({
   nodes: z.string(),
   edges: z.string(),
   viewport: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+const StylePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  instruction: z.string(),
+  palette: z.array(z.string()),
+  reference_images: z.array(z.string()),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -236,6 +255,186 @@ const deleteWorkflow = createRoute({
 app.openapi(deleteWorkflow, async (c) => {
   const { id } = c.req.valid("param");
   await run("DELETE FROM workflows WHERE id = ?", [id]);
+  return c.json({ ok: true }, 200);
+});
+
+// ── Style presets ────────────────────────────────────────────────────
+// A style preset is a reusable "lock your style once" definition: a written
+// style instruction, an optional hex palette, and optional reference images.
+// It is stored once and referenced by id from style nodes and Quick Generate;
+// the expansion into prompt + input images happens server-side (see
+// applyStylePreset) so every caller — canvas, quick generate, public API —
+// composes it identically.
+
+/** As stored: `palette` and `reference_images` are JSON text columns. */
+type StylePresetRow = Omit<z.infer<typeof StylePresetSchema>, "palette" | "reference_images"> & {
+  palette: string;
+  reference_images: string;
+};
+
+/** Parse a JSON text column into a string array, tolerating legacy/blank values. */
+function parseStringArray(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Rows store JSON text; the API speaks arrays in both directions. */
+function toStylePreset(row: StylePresetRow): z.infer<typeof StylePresetSchema> {
+  return {
+    ...row,
+    palette: parseStringArray(row.palette),
+    reference_images: parseStringArray(row.reference_images),
+  };
+}
+
+/**
+ * Expand a preset into the prompt and reference images for one generation.
+ * Reference images go first so the model reads them as the style anchor
+ * before any per-generation input images.
+ */
+async function applyStylePreset(
+  db: D1Database,
+  presetId: string | undefined,
+  model: string,
+  prompt: string,
+  inputImages: string[] | undefined,
+): Promise<{ prompt: string; input_images: string[] | undefined }> {
+  if (!presetId) return { prompt, input_images: inputImages };
+  await ensureSchema(db);
+  const preset = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [presetId]);
+  // A deleted preset must not silently abort the generation — run unstyled.
+  if (!preset) return { prompt, input_images: inputImages };
+
+  const palette = parseStringArray(preset.palette);
+  const refs = parseStringArray(preset.reference_images);
+
+  const useRefs = refs.length > 0 && acceptsStyleReferences(model, !!inputImages?.length);
+
+  const guide: string[] = [];
+  if (preset.instruction.trim()) guide.push(preset.instruction.trim());
+  if (palette.length) guide.push(`Use this colour palette: ${palette.join(", ")}.`);
+  if (useRefs) guide.push("Match the style, palette and treatment of the reference image(s) provided. Do not copy their subject matter.");
+
+  const styled = guide.length
+    ? `${prompt}\n\nStyle guide "${preset.name}" (apply consistently): ${guide.join(" ")}`
+    : prompt;
+
+  const images = [...(useRefs ? refs : []), ...(inputImages || [])];
+  return { prompt: styled, input_images: images.length ? images : undefined };
+}
+
+const listStylePresets = createRoute({
+  method: "get",
+  path: "/api/style-presets",
+  responses: { 200: { content: { "application/json": { schema: z.array(StylePresetSchema) } }, description: "OK" } },
+});
+
+app.openapi(listStylePresets, async (c) => {
+  await ensureSchema(c.env.DB);
+  const rows = await query<StylePresetRow>("SELECT * FROM style_presets ORDER BY updated_at DESC");
+  return c.json(rows.map(toStylePreset), 200);
+});
+
+const createStylePreset = createRoute({
+  method: "post",
+  path: "/api/style-presets",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string().optional(),
+            instruction: z.string().optional(),
+            palette: z.array(z.string()).optional(),
+            reference_images: z.array(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: StylePresetSchema } }, description: "OK" } },
+});
+
+app.openapi(createStylePreset, async (c) => {
+  await ensureSchema(c.env.DB);
+  const body = c.req.valid("json");
+  const id = crypto.randomUUID();
+  await run(
+    "INSERT INTO style_presets (id, name, instruction, palette, reference_images) VALUES (?, ?, ?, ?, ?)",
+    [
+      id,
+      body.name?.trim() || "Untitled Style",
+      body.instruction || "",
+      JSON.stringify(body.palette || []),
+      JSON.stringify(body.reference_images || []),
+    ],
+  );
+  const row = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [id]);
+  return c.json(toStylePreset(row!), 200);
+});
+
+const updateStylePreset = createRoute({
+  method: "put",
+  path: "/api/style-presets/{id}",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string().optional(),
+            instruction: z.string().optional(),
+            palette: z.array(z.string()).optional(),
+            reference_images: z.array(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: StylePresetSchema } }, description: "OK" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Not found" },
+  },
+});
+
+app.openapi(updateStylePreset, async (c) => {
+  await ensureSchema(c.env.DB);
+  const { id } = c.req.valid("param");
+  const body = c.req.valid("json");
+
+  const sets: string[] = [];
+  const args: unknown[] = [];
+  if (body.name !== undefined) { sets.push("name = ?"); args.push(body.name.trim() || "Untitled Style"); }
+  if (body.instruction !== undefined) { sets.push("instruction = ?"); args.push(body.instruction); }
+  if (body.palette !== undefined) { sets.push("palette = ?"); args.push(JSON.stringify(body.palette)); }
+  if (body.reference_images !== undefined) { sets.push("reference_images = ?"); args.push(JSON.stringify(body.reference_images)); }
+
+  if (sets.length) {
+    sets.push("updated_at = datetime('now')");
+    await run(`UPDATE style_presets SET ${sets.join(", ")} WHERE id = ?`, [...args, id]);
+  }
+
+  const row = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [id]);
+  if (!row) return c.json({ error: "Not found" }, 404);
+  return c.json(toStylePreset(row), 200);
+});
+
+const deleteStylePreset = createRoute({
+  method: "delete",
+  path: "/api/style-presets/{id}",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.boolean() }) } }, description: "OK" } },
+});
+
+app.openapi(deleteStylePreset, async (c) => {
+  await ensureSchema(c.env.DB);
+  const { id } = c.req.valid("param");
+  await run("DELETE FROM style_presets WHERE id = ?", [id]);
   return c.json({ ok: true }, 200);
 });
 
@@ -721,6 +920,23 @@ async function generateImageOpenRouter(
  * (the default for every other model). Throws on missing keys / unsupported
  * combinations so callers surface a clear error.
  */
+/**
+ * Whether a preset's reference images can be attached to this request.
+ *
+ * `input_images` is not a neutral field — routeImageGeneration branches on it:
+ * fal models reject a non-empty list outright, and OpenAI-direct models switch
+ * from generate to edit. Silently inheriting either would turn "apply a style"
+ * into a hard error or a different API call, so preset references are dropped
+ * where they would do that. The written direction and palette still apply.
+ */
+function acceptsStyleReferences(model: string, callerSuppliedImages: boolean): boolean {
+  // Text-to-image only — any reference image is a hard error.
+  if (FAL_IMAGE_MODELS.has(model)) return false;
+  // Safe only when the request is already an edit; otherwise refs would flip it.
+  if (OPENAI_DIRECT_MODELS.has(model)) return callerSuppliedImages;
+  return true;
+}
+
 async function routeImageGeneration(
   env: Env["Bindings"],
   params: {
@@ -779,6 +995,7 @@ const generateImage = createRoute({
             image_size: z.string().default("1K"),
             quality: z.enum(["auto", "low", "medium", "high"]).optional(),
             input_images: z.array(z.string()).optional(),
+            style_preset_id: z.string().optional(),
           }),
         },
       },
@@ -803,10 +1020,11 @@ const generateImage = createRoute({
 });
 
 app.openapi(generateImage, async (c) => {
-  const { prompt, model, aspect_ratio, image_size, quality, input_images } = c.req.valid("json");
+  const { prompt, model, aspect_ratio, image_size, quality, input_images, style_preset_id } = c.req.valid("json");
   try {
+    const styled = await applyStylePreset(c.env.DB, style_preset_id, model, prompt, input_images);
     const result = await routeImageGeneration(c.env, {
-      model, prompt, aspect_ratio, image_size, quality, input_images,
+      model, prompt: styled.prompt, aspect_ratio, image_size, quality, input_images: styled.input_images,
     });
     return c.json(result, 200);
   } catch (err) {
