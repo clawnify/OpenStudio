@@ -18,6 +18,8 @@ export interface Generation {
   status: string;
   error: string | null;
   run_id: string | null;
+  /** USD billed by the provider. Rendered via formatCost() in the app's unit. */
+  cost_usd: number | null;
   created_at: string;
 }
 
@@ -52,6 +54,8 @@ export interface ModelOption {
   name: string;
   /** Which upstream the request is routed to. Used by the UI to decide which provider-specific options (e.g. OpenAI's `quality`) to show. */
   provider?: "openrouter" | "openai" | "fal" | "anthropic";
+  /** USD per output image *token* (OpenRouter `pricing.image_output`) — comparable across models, not a per-image price. */
+  imageTokenPrice?: number;
 }
 
 export interface PromptNodeData {
@@ -77,6 +81,8 @@ export interface GenerateNodeData {
   imageUrl?: string;
   error?: string;
   lastPrompt?: string;
+  /** USD billed for the last successful generation on this node. */
+  lastCostUsd?: number;
 }
 
 export interface StyleNodeData {

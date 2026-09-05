@@ -16,8 +16,9 @@ A visual AI image generation studio with a justified gallery and node-based work
 - **Prompt variables** — type `/` in a prompt node to reference another prompt's content with `{{}}` syntax, rendered as inline pills
 - **Auto-naming** — prompt nodes automatically get a descriptive title via Gemini 3.1 Flash Lite on blur
 - **Editable titles** — double-click any node title to rename it
-- **10+ models** — Gemini 3.1 Flash, Gemini 3 Pro, GPT Image 1, FLUX.2 Max, SeedDream 4.5, and more via OpenRouter
-- **Generation history** — all generations persisted with prompt, model, and image
+- **Live model list** — every image model OpenRouter currently offers, fetched at request time rather than hardcoded, so a withdrawn model disappears from the picker instead of failing mid-run
+- **Cost visibility** — each model is tagged `$`–`$$$$` by relative price, and every generation records what the provider actually billed, with per-run and per-workflow totals
+- **Generation history** — all generations persisted with prompt, model, cost, and image
 - **Dual-mode UI** — human-optimized + AI-agent-optimized (`?agent=true`)
 - **Lightbox** — click any image to view full-size
 - **Drag-to-reuse** — drag generated images into the prompt bar to use as input
@@ -109,8 +110,8 @@ Inside a deployed instance, `schema.sql` becomes an auto-regenerated snapshot of
 | GET | `/api/workflows/:id` | Get a workflow |
 | PUT | `/api/workflows/:id` | Update a workflow |
 | DELETE | `/api/workflows/:id` | Delete a workflow |
-| POST | `/api/generate` | Generate image via OpenRouter |
-| GET | `/api/models` | List available image models |
+| POST | `/api/generate` | Generate image via OpenRouter (returns `costUsd`) |
+| GET | `/api/models` | List available image models, with relative price |
 | GET | `/api/generations/:workflowId` | List generations for a workflow |
 | POST | `/api/generations` | Save a generation record |
 | GET | `/api/style-presets` | List style presets |

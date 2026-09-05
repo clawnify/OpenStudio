@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, typ
 import { Sparkles, Copy, Palette } from "lucide-react";
 import { useWorkflow } from "../context";
 import { api } from "../api";
+import { formatCost, relativePrice } from "../cost";
 import type { Generation } from "../types";
 import { StylePresetsDialog } from "./style-presets-dialog";
 
@@ -36,6 +37,7 @@ function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSou
   onDragStart: (e: DragEvent, url: string) => void;
   onUseAsSource: (url: string) => void;
 }) {
+  const { features: { costUnit } } = useWorkflow();
   const totalGap = GAP * (items.length - 1);
   const usableWidth = containerWidth - totalGap;
   const totalRatio = items.reduce((sum, it) => sum + it.ratio, 0);
@@ -85,7 +87,12 @@ function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSou
             <div className="absolute inset-x-0 bottom-0 pt-8 px-3 pb-3 bg-black/40 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
               <span className="text-[11px] text-white leading-snug">{gen.prompt.slice(0, 80)}{gen.prompt.length > 80 ? "..." : ""}</span>
               <div className="flex items-center justify-between mt-1 gap-1">
-                <span className="text-[10px] text-white/60">{gen.model.split("/").pop()}</span>
+                <span className="text-[10px] text-white/60">
+                  {gen.model.split("/").pop()}
+                  {formatCost(gen.cost_usd, costUnit) && (
+                    <span className="ml-1.5 text-white/45">{formatCost(gen.cost_usd, costUnit)}</span>
+                  )}
+                </span>
                 <div className="flex items-center gap-1">
                   <button
                     className="inline-flex items-center gap-1 text-[10px] text-white/80 bg-white/15 hover:bg-white/25 border-none px-2 py-0.5 cursor-pointer transition-colors"
@@ -111,9 +118,11 @@ function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSou
 }
 
 export function QuickGenerate() {
-  const { models, stylePresets } = useWorkflow();
+  const { models, stylePresets, features: { costUnit } } = useWorkflow();
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState("google/gemini-3.1-flash-image-preview");
+  // Empty until /api/models resolves — the catalogue is live, so hardcoding a
+  // default risks defaulting to a model that has been withdrawn upstream.
+  const [model, setModel] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [imageSize, setImageSize] = useState("1K");
   const [imageCount, setImageCount] = useState(1);
@@ -131,6 +140,14 @@ export function QuickGenerate() {
   const fileRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Every published token price, so each option can be tiered against the cheapest.
+  const tokenPrices = useMemo(() => models.map((m) => m.imageTokenPrice), [models]);
+
+  // Adopt the first live model as the default once the catalogue resolves.
+  useEffect(() => {
+    if (!model && models.length > 0) setModel(models[0].id);
+  }, [models, model]);
 
   useLayoutEffect(() => {
     const ta = textareaRef.current;
@@ -186,22 +203,23 @@ export function QuickGenerate() {
   }, []);
 
   const generate = useCallback(async () => {
-    if (!prompt.trim() || generating) return;
+    if (!prompt.trim() || !model || generating) return;
     setGenerating(true);
     setPendingCount(imageCount);
     setError(null);
     try {
       for (let i = 0; i < imageCount; i++) {
-        const result = await api<{ images: Array<{ url: string }>; text?: string }>(
+        const result = await api<{ images: Array<{ url: string }>; text?: string; costUsd?: number }>(
           "POST", "/api/generate",
           { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, input_images: attachments.length ? attachments : undefined, style_preset_id: stylePresetId || undefined }
         );
         const img = result.images[0];
         const imageUrl = img?.url || "";
         const gen = await api<Generation>("POST", "/api/generations", {
-          workflow_id: 0, node_id: "quick", prompt, model,
+          workflow_id: "0", node_id: "quick", prompt, model,
           image_url: imageUrl || null, status: imageUrl ? "success" : "error",
           error: imageUrl ? null : "No image returned",
+          cost_usd: result.costUsd ?? null,
         });
         setGenerations((prev) => [gen, ...prev]);
         setPendingCount((c) => c - 1);
@@ -351,8 +369,11 @@ export function QuickGenerate() {
         </div>
         <div className="flex items-center justify-between px-4 pb-3 pt-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken max-w-[180px]" value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)}>
-              {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken max-w-[260px]" value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)}>
+              {models.map((m) => {
+                const price = relativePrice(m.imageTokenPrice, tokenPrices);
+                return <option key={m.id} value={m.id}>{price ? `${m.name} · ${price}` : m.name}</option>;
+              })}
             </select>
             <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken" value={aspectRatio} onChange={(e) => setAspectRatio((e.target as HTMLSelectElement).value)}>
               {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}

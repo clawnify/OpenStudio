@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { Workflow, ModelOption, Generation, StylePreset } from "./types";
+import type { CostUnit } from "./cost";
 import type { Node, Edge, Viewport } from "@xyflow/react";
 
 export interface Features {
@@ -7,6 +8,8 @@ export interface Features {
   openai: boolean;
   fal: boolean;
   anthropic: boolean;
+  /** Unit generation cost is displayed in — "credits" on Clawnify, "usd" self-hosted. */
+  costUnit: CostUnit;
 }
 
 export interface LeafResult {

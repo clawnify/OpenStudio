@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS generations (
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT,
   run_id TEXT,
+  -- USD billed by the provider for this generation, as reported upstream.
+  -- Stored in the provider's native unit; the UI converts to credits when the
+  -- app runs on Clawnify (see src/server/pricing.ts → resolveCostUnit).
+  cost_usd REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
