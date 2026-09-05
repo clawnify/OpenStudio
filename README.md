@@ -17,6 +17,8 @@ A visual AI image generation studio with a justified gallery and node-based work
 - **Editable titles** — double-click any node title to rename it
 - **10+ models** — Gemini 3.1 Flash, Gemini 3 Pro, GPT Image 1, FLUX.2 Max, SeedDream 4.5, and more via OpenRouter
 - **Generation history** — all generations persisted with prompt, model, and image
+- **Node version history** — browse every generation a node ever produced across runs, restore any past run's snapshot to the canvas
+- **Side-by-side compare** — pick any two outputs to compare full-screen, with per-image download and restore
 - **Dual-mode UI** — human-optimized + AI-agent-optimized (`?agent=true`)
 - **Lightbox** — click any image to view full-size
 - **Drag-to-reuse** — drag generated images into the prompt bar to use as input
