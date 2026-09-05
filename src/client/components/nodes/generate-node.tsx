@@ -6,12 +6,13 @@ import { NodeHeader } from "./node-header";
 import { NodeToolbar } from "./node-toolbar";
 import { downloadImage } from "../../download";
 import { ImageLightbox } from "../image-lightbox";
+import { formatCost, relativePrice } from "../../cost";
 import type { GenerateNodeData } from "../../types";
 
 interface Props { id: string; data: GenerateNodeData; }
 
 export function GenerateNode({ id, data }: Props) {
-  const { updateNodeData, models } = useWorkflow();
+  const { updateNodeData, models, features: { costUnit } } = useWorkflow();
   const [copied, setCopied] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const selectClass = "w-full bg-surface-sunken border border-border rounded-sm text-foreground text-xs py-1 px-2 outline-none cursor-pointer appearance-none focus:border-ring";
@@ -49,7 +50,10 @@ export function GenerateNode({ id, data }: Props) {
       <div className="p-2.5 flex flex-col gap-1.5">
         <label className={labelClass}>Model</label>
         <select className={selectClass} value={data.model} onChange={(e) => updateNodeData(id, { model: (e.target as HTMLSelectElement).value })}>
-          {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          {models.map((m) => {
+            const price = relativePrice(m.imageTokenPrice, models.map((x) => x.imageTokenPrice));
+            return <option key={m.id} value={m.id}>{price ? `${m.name} · ${price}` : m.name}</option>;
+          })}
         </select>
         <label className={labelClass}>Aspect Ratio</label>
         <select className={selectClass} value={(data as any).aspectRatio || "1:1"} onChange={(e) => updateNodeData(id, { aspectRatio: (e.target as HTMLSelectElement).value })}>
@@ -66,6 +70,9 @@ export function GenerateNode({ id, data }: Props) {
               {["auto", "low", "medium", "high"].map((q) => <option key={q} value={q}>{q}</option>)}
             </select>
           </>
+        )}
+        {data.status === "success" && formatCost(data.lastCostUsd, costUnit) && (
+          <div className="text-[10px] text-faint text-right">{formatCost(data.lastCostUsd, costUnit)}</div>
         )}
         {data.status === "running" && <div className="flex items-center gap-1.5 text-[11px] p-1.5 rounded-sm bg-surface-sunken text-muted"><span className="spinner" /> Generating...</div>}
         {data.status === "error" && <div className="text-[11px] p-1.5 rounded-sm bg-danger-tint text-danger break-words">{data.error || "Generation failed"}</div>}

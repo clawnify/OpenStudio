@@ -75,7 +75,7 @@ export function useWorkflowState(): WorkflowContextValue {
   const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
-  const [features, setFeatures] = useState<Features>({ openrouter: false, openai: false, fal: false, anthropic: false });
+  const [features, setFeatures] = useState<Features>({ openrouter: false, openai: false, fal: false, anthropic: false, costUnit: "usd" });
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [lastRunResults, setLastRunResults] = useState<LeafResult[]>([]);
   const [executing, setExecuting] = useState(false);
@@ -461,7 +461,7 @@ export function useWorkflowState(): WorkflowContextValue {
             updateNodeData(nodeId, { status: "running", error: undefined, imageUrl: undefined });
 
             try {
-              const result = await api<{ images: Array<{ url: string }>; text?: string }>(
+              const result = await api<{ images: Array<{ url: string }>; text?: string; costUsd?: number }>(
                 "POST",
                 "/api/generate",
                 { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, quality, input_images: inputImages.length ? inputImages : undefined }
@@ -493,7 +493,7 @@ export function useWorkflowState(): WorkflowContextValue {
                 break;
               }
 
-              updateNodeData(nodeId, { status: "success", imageUrl, lastPrompt: prompt });
+              updateNodeData(nodeId, { status: "success", imageUrl, lastPrompt: prompt, lastCostUsd: result.costUsd });
               outputs.set(nodeId, { imageUrl, text: result.text, promptText: prompt });
 
               // Save generation
@@ -503,6 +503,7 @@ export function useWorkflowState(): WorkflowContextValue {
                 prompt,
                 model,
                 image_url: imageUrl,
+                cost_usd: result.costUsd ?? null,
                 status: "success",
                 run_id: currentRunIdRef.current,
               });

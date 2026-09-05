@@ -12,8 +12,8 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0(@hono/zod-openapi@0.18.4(hono@4.12.12)(zod@3.25.76))(hono@4.12.12)
       '@clawnify/db':
-        specifier: ^0.2.0
-        version: 0.2.0
+        specifier: ^0.4.1
+        version: 0.4.1
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
@@ -238,9 +238,6 @@ packages:
     peerDependencies:
       '@hono/zod-openapi': '>=0.18 <1'
       hono: '*'
-
-  '@clawnify/db@0.2.0':
-    resolution: {integrity: sha512-6ADNSig+qLg24xajbDcjJXktBZSNKwfTDJhh1oH5TFKh8frVOzHirVGe06XTeMn9m5lI40jlpQ2sLo0OOl0iEA==}
 
   '@clawnify/db@0.4.1':
     resolution: {integrity: sha512-Ck9RGqEElt6P/3S9quxvr2MIg8mZk1n9wFftH3PpGPFnpA6hbk0td67oaioeMRuDCn7vePcJCeyYEkbvNVYy/g==}
@@ -3832,8 +3829,6 @@ snapshots:
       - prisma
       - sql.js
       - sqlite3
-
-  '@clawnify/db@0.2.0': {}
 
   '@clawnify/db@0.4.1':
     dependencies:

@@ -1,8 +1,9 @@
 import { createApp, createRoute, z, OpenAPIHono } from "@clawnify/app";
 import { query, get, run } from "./db.js";
 import { initUploads, putUpload, getUpload, deleteUpload, readUploadAsBase64DataUrl } from "./uploads.js";
+import { listOpenRouterImageModels, extractCostUsd, resolveCostUnit } from "./pricing.js";
 
-type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; ANTHROPIC_API_KEY?: string } };
+type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; ANTHROPIC_API_KEY?: string; CLAWNIFY_TOKEN?: string } };
 
 const app = createApp<Env>({
   title: "OpenStudio",
@@ -49,6 +50,7 @@ function ensureSchema(db: D1Database): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id)`,
       `ALTER TABLE generations ADD COLUMN run_id TEXT`,
+      `ALTER TABLE generations ADD COLUMN cost_usd REAL`,
       `CREATE INDEX IF NOT EXISTS idx_generations_run ON generations(run_id)`,
     ];
     for (const sql of statements) {
@@ -272,19 +274,18 @@ app.get("/api/uploads/:filename", async (c) => {
 
 // ── Image generation (OpenRouter proxy) ──────────────────────────────
 
-const IMAGE_ONLY_MODELS = new Set([
-  "black-forest-labs/flux.2-max",
-  "black-forest-labs/flux.2-klein-4b",
-  "sourceful/riverflow-v2-fast",
-  "bytedance-seed/seedream-4.5",
-]);
+// Models that reject `modalities: ["image", "text"]` and need image-only. Empty
+// because every model that needed it (FLUX.2, Riverflow, SeedDream) has since
+// been withdrawn from OpenRouter — kept as the place to list the next one,
+// since the live catalogue cannot tell us which models have this constraint.
+const IMAGE_ONLY_MODELS = new Set<string>([]);
 
 // Explicit allowlist of models that get routed to OpenAI's REST API directly
 // (when OPENAI_API_KEY is set). The `openai/` prefix alone is NOT enough since
-// OpenRouter also uses it (e.g. openai/gpt-image-1 lives there).
-const OPENAI_DIRECT_MODELS = new Set([
-  "openai/gpt-image-2",
-  "openai/gpt-image-2-2026-04-21",
+// OpenRouter also uses it (e.g. openai/gpt-5-image lives there).
+const OPENAI_DIRECT_MODELS = new Map<string, string>([
+  ["openai/gpt-image-2", "GPT Image 2 (OpenAI direct)"],
+  ["openai/gpt-image-2-2026-04-21", "GPT Image 2 · 2026-04-21 (OpenAI direct)"],
 ]);
 
 // fal.ai text-to-image models routed directly to fal.run (when FAL_API_KEY is
@@ -611,7 +612,7 @@ async function generateImageOpenRouter(
   apiKey: string,
   params: { model: string; prompt: string; aspect_ratio: string; image_size: string; input_images?: string[] },
   opts?: { onRateLimit?: () => void },
-): Promise<{ images: Array<{ url: string }>; text?: string }> {
+): Promise<{ images: Array<{ url: string }>; text?: string; costUsd?: number }> {
   const { model, prompt, aspect_ratio, image_size, input_images } = params;
   const modalities = IMAGE_ONLY_MODELS.has(model) ? ["image"] : ["image", "text"];
 
@@ -636,6 +637,7 @@ async function generateImageOpenRouter(
   let lastError: Error | null = null;
   let data: {
     choices?: Array<{ message?: { content?: string; images?: Array<{ image_url: { url: string } }> } }>;
+    usage?: { cost?: number; cost_details?: { upstream_inference_cost?: number } };
   } | null = null;
   for (let attempt = 0; attempt < MAX_CONTENT_ATTEMPTS; attempt++) {
     try {
@@ -652,6 +654,8 @@ async function generateImageOpenRouter(
           messages: [{ role: "user", content }],
           modalities,
           image_config: { aspect_ratio, image_size },
+          // Returns `usage.cost` (and the BYOK upstream figure) on the response.
+          usage: { include: true },
         }),
       }, { onRateLimit: opts?.onRateLimit });
 
@@ -707,7 +711,7 @@ async function generateImageOpenRouter(
       images.push({ url: remoteUrl });
     }
   }
-  return { images, text: message?.content || undefined };
+  return { images, text: message?.content || undefined, costUsd: extractCostUsd(data.usage) };
 }
 
 /**
@@ -728,7 +732,7 @@ async function routeImageGeneration(
     input_images?: string[];
   },
   opts?: { onRateLimit?: () => void },
-): Promise<{ images: Array<{ url: string }>; text?: string }> {
+): Promise<{ images: Array<{ url: string }>; text?: string; costUsd?: number }> {
   const { model, prompt, aspect_ratio, image_size, quality, input_images } = params;
 
   if (OPENAI_DIRECT_MODELS.has(model)) {
@@ -787,6 +791,8 @@ const generateImage = createRoute({
           schema: z.object({
             images: z.array(z.object({ url: z.string() })),
             text: z.string().optional(),
+            /** USD actually billed for this generation, when upstream reports it. */
+            costUsd: z.number().optional(),
           }),
         },
       },
@@ -821,6 +827,8 @@ const listModels = createRoute({
             id: z.string(),
             name: z.string(),
             provider: z.enum(["openrouter", "openai", "fal"]).optional(),
+            /** USD per output image *token*, when the upstream publishes a price. */
+            imageTokenPrice: z.number().optional(),
           })),
         },
       },
@@ -837,6 +845,8 @@ app.get("/api/features", (c) => {
     openai: !!c.env.OPENAI_API_KEY,
     fal: !!c.env.FAL_API_KEY,
     anthropic: !!c.env.ANTHROPIC_API_KEY,
+    // Which unit generation cost is shown in. See resolveCostUnit().
+    costUnit: resolveCostUnit(c.env),
   }, 200);
 });
 
@@ -844,31 +854,24 @@ app.openapi(listModels, async (c) => {
   const hasOpenRouter = !!c.env.OPENROUTER_API_KEY;
   const hasOpenAI = !!c.env.OPENAI_API_KEY;
   const hasFal = !!c.env.FAL_API_KEY;
-  const baseModels: Array<{ id: string; name: string }> = [
-    { id: "google/gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image" },
-    { id: "google/gemini-3-pro-image-preview", name: "Gemini 3 Pro Image" },
-    { id: "openai/gpt-image-2-2026-04-21", name: "GPT Image 2 (2026-04-21 snapshot)" },
-    { id: "openai/gpt-image-2", name: "GPT Image 2 (OpenAI direct)" },
-    { id: "openai/gpt-image-1", name: "GPT Image 1" },
-    { id: "openai/gpt-5-image-mini", name: "GPT-5 Image Mini" },
-    { id: "openai/gpt-5-image", name: "GPT-5 Image" },
-    { id: "openai/gpt-5.4-image-2", name: "GPT-5.4 Image 2" },
-    { id: "google/gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image" },
-    { id: "bytedance-seed/seedream-4.5", name: "SeedDream 4.5" },
-    { id: "black-forest-labs/flux.2-max", name: "FLUX.2 Max" },
-    { id: "black-forest-labs/flux.2-klein-4b", name: "FLUX.2 Klein 4B" },
-    { id: "sourceful/riverflow-v2-fast", name: "Riverflow v2 Fast" },
-  ];
-  const models = baseModels
-    .map((m) => ({
-      ...m,
-      provider: (OPENAI_DIRECT_MODELS.has(m.id) ? "openai" : "openrouter") as "openai" | "openrouter" | "fal",
-    }))
-    .filter((m) => (m.provider === "openai" ? hasOpenAI : hasOpenRouter));
+
+  // Listed live so a withdrawn model disappears from the picker instead of
+  // failing at generate time. See pricing.ts for why this is not a static list.
+  const openRouterModels = hasOpenRouter
+    ? await listOpenRouterImageModels(c.env.OPENROUTER_API_KEY)
+    : [];
+
+  // OpenAI-direct entries bypass OpenRouter (own key, own REST API), so they are
+  // not in that catalogue and stay declared here. No published per-image price.
+  const openAiModels = hasOpenAI
+    ? Array.from(OPENAI_DIRECT_MODELS.entries()).map(([id, name]) => ({ id, name, provider: "openai" as const }))
+    : [];
+
   const falModels = hasFal
     ? Array.from(FAL_IMAGE_MODELS.entries()).map(([id, name]) => ({ id, name, provider: "fal" as const }))
     : [];
-  return c.json([...models, ...falModels], 200);
+
+  return c.json([...openRouterModels, ...openAiModels, ...falModels], 200);
 });
 
 // ── Analyze (vision → text/JSON) ─────────────────────────────────────
@@ -1380,6 +1383,7 @@ const GenerationSchema = z.object({
   status: z.string(),
   error: z.string().nullable(),
   run_id: z.string().nullable().optional(),
+  cost_usd: z.number().nullable().optional(),
   created_at: z.string(),
 });
 
@@ -1417,6 +1421,7 @@ const saveGeneration = createRoute({
             status: z.string(),
             error: z.string().nullable().optional(),
             run_id: z.string().nullable().optional(),
+            cost_usd: z.number().nullable().optional(),
           }),
         },
       },
@@ -1432,8 +1437,8 @@ app.openapi(saveGeneration, async (c) => {
   const body = c.req.valid("json");
   const id = crypto.randomUUID();
   await run(
-    "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, body.workflow_id, body.node_id, body.prompt, body.model, body.image_url, body.status, body.error ?? null, body.run_id ?? null],
+    "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error, run_id, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, body.workflow_id, body.node_id, body.prompt, body.model, body.image_url, body.status, body.error ?? null, body.run_id ?? null, body.cost_usd ?? null],
   );
   const row = await get<z.infer<typeof GenerationSchema>>("SELECT * FROM generations WHERE id = ?", [id]);
   return c.json(row!, 200);
@@ -1776,8 +1781,8 @@ publicApp.openapi(executeWorkflow, async (c) => {
 
           // Save generation
           await run(
-            "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [crypto.randomUUID(), wf.id, nodeId, prompt, model, imageUrl || null, "success", null],
+            "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [crypto.randomUUID(), wf.id, nodeId, prompt, model, imageUrl || null, "success", null, result.costUsd ?? null],
           );
         } catch (err) {
           outputs.set(nodeId, { promptText: prompt });
