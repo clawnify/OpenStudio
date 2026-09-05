@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS generations (
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT,
   run_id TEXT,
+  -- USD billed by the provider for this generation, as reported upstream.
+  -- Stored in the provider's native unit; the UI converts to credits when the
+  -- app runs on Clawnify (see src/server/pricing.ts → resolveCostUnit).
+  cost_usd REAL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -34,3 +38,16 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id);
+
+-- Reusable style definitions ("lock your style once"). Referenced by style
+-- nodes on the canvas and by Quick Generate; expanded into the prompt and
+-- input images server-side at generation time.
+CREATE TABLE IF NOT EXISTS style_presets (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT 'Untitled Style',
+  instruction TEXT NOT NULL DEFAULT '',
+  palette TEXT NOT NULL DEFAULT '[]',
+  reference_images TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

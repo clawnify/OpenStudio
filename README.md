@@ -12,11 +12,14 @@ A visual AI image generation studio with a justified gallery and node-based work
 - **Justified gallery** — generated images displayed in a pixel-perfect justified layout preserving aspect ratios
 - **Image-to-image** — drag a generated image or upload a file as source for the next generation
 - **Node-based workflows** — React Flow editor for building reusable multi-step generation pipelines
+- **Style presets** — save a look once (written direction, hex palette, reference images) and reuse it across every workflow, from a Style node on the canvas or the Quick Generate bar. Reference images are sent only to models that accept them; the rest still get the written direction and palette
 - **Prompt variables** — type `/` in a prompt node to reference another prompt's content with `{{}}` syntax, rendered as inline pills
 - **Auto-naming** — prompt nodes automatically get a descriptive title via Gemini 3.1 Flash Lite on blur
 - **Editable titles** — double-click any node title to rename it
 - **10+ models** — Gemini 3.1 Flash, Gemini 3 Pro, GPT Image 1, FLUX.2 Max, SeedDream 4.5, and more via OpenRouter
-- **Generation history** — all generations persisted with prompt, model, and image
+- **Live model list** — every image model OpenRouter currently offers, fetched at request time rather than hardcoded, so a withdrawn model disappears from the picker instead of failing mid-run
+- **Cost visibility** — each model is tagged `$`–`$$$$` by relative price, and every generation records what the provider actually billed, with per-run and per-workflow totals
+- **Generation history** — all generations persisted with prompt, model, cost, and image
 - **Node version history** — browse every generation a node ever produced across runs, restore any past run's snapshot to the canvas
 - **Side-by-side compare** — pick any two outputs to compare full-screen, with per-image download and restore
 - **Dual-mode UI** — human-optimized + AI-agent-optimized (`?agent=true`)
@@ -89,6 +92,7 @@ src/
         prompt-node.tsx       — Text prompt with / variable autocomplete
         generate-node.tsx     — AI image generation node
         image-input-node.tsx  — Reference image upload node
+        style-node.tsx        — Applies a saved style preset downstream
         output-node.tsx       — Result display node
 ```
 
@@ -109,10 +113,14 @@ Inside a deployed instance, `schema.sql` becomes an auto-regenerated snapshot of
 | GET | `/api/workflows/:id` | Get a workflow |
 | PUT | `/api/workflows/:id` | Update a workflow |
 | DELETE | `/api/workflows/:id` | Delete a workflow |
-| POST | `/api/generate` | Generate image via OpenRouter |
-| GET | `/api/models` | List available image models |
+| POST | `/api/generate` | Generate image via OpenRouter (returns `costUsd`) |
+| GET | `/api/models` | List available image models, with relative price |
 | GET | `/api/generations/:workflowId` | List generations for a workflow |
 | POST | `/api/generations` | Save a generation record |
+| GET | `/api/style-presets` | List style presets |
+| POST | `/api/style-presets` | Create a style preset |
+| PUT | `/api/style-presets/:id` | Update a style preset |
+| DELETE | `/api/style-presets/:id` | Delete a style preset |
 | POST | `/api/suggest-name` | Auto-suggest a node title via Gemini |
 | POST | `/api/uploads` | Upload an image file |
 | GET | `/api/uploads/:filename` | Serve an uploaded image |

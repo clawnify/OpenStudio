@@ -6,6 +6,7 @@ import { ImageLightbox } from "./image-lightbox";
 import { CompareView } from "./compare-view";
 import { NodeHistoryDialog } from "./node-history-dialog";
 import { downloadImage } from "../download";
+import { formatCost, sumCost } from "../cost";
 import type { Generation } from "../types";
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
 }
 
 export function WorkflowOutputs({ onLoaded }: Props = {}) {
-  const { generations, activeWorkflow, refreshGenerations, loadRun, deleteGeneration } = useWorkflow();
+  const { generations, activeWorkflow, refreshGenerations, loadRun, deleteGeneration, features: { costUnit } } = useWorkflow();
   const [selected, setSelected] = useState<Generation | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<Generation | null>(null);
@@ -67,8 +68,33 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
     );
   }
 
+  // What this workflow has cost so far, and what the newest run cost. Both are
+  // sums of what the provider actually billed, so a generation whose cost the
+  // provider did not report is simply left out rather than guessed at.
+  const latestRunId = generations.find((g) => g.run_id)?.run_id ?? null;
+  const latestRun = latestRunId ? generations.filter((g) => g.run_id === latestRunId) : [];
+  const latestRunCost = formatCost(sumCost(latestRun.map((g) => g.cost_usd)), costUnit);
+  const totalCost = formatCost(sumCost(generations.map((g) => g.cost_usd)), costUnit);
+
   return (
     <div className="flex-1 overflow-y-auto bg-background p-4">
+      {(totalCost || latestRunCost) && (
+        <div className="flex items-center gap-4 mb-3 text-[11px] text-faint">
+          {latestRunCost && (
+            <span>
+              Last run
+              <span className="ml-1.5 text-muted font-medium">{latestRunCost}</span>
+              <span className="ml-1">({latestRun.length} {latestRun.length === 1 ? "image" : "images"})</span>
+            </span>
+          )}
+          {totalCost && (
+            <span>
+              This workflow
+              <span className="ml-1.5 text-muted font-medium">{totalCost}</span>
+            </span>
+          )}
+        </div>
+      )}
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
         {generations.map((gen) => (
           <div
@@ -161,7 +187,12 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
             <div className="p-2.5 border-t border-border">
               <p className="text-[11px] text-muted line-clamp-2 leading-snug min-h-[28px]">{gen.prompt}</p>
               <div className="flex items-center justify-between mt-1.5 gap-2">
-                <span className="text-[10px] text-faint truncate">{gen.model.split("/").pop()}</span>
+                <span className="flex items-baseline gap-1.5 min-w-0 text-[10px] text-faint">
+                  <span className="truncate">{gen.model.split("/").pop()}</span>
+                  {formatCost(gen.cost_usd, costUnit) && (
+                    <span className="shrink-0 text-faint/70">{formatCost(gen.cost_usd, costUnit)}</span>
+                  )}
+                </span>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-[10px] text-faint">{formatDate(gen.created_at)}</span>
                   <button

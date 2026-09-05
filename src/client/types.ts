@@ -18,6 +18,8 @@ export interface Generation {
   status: string;
   error: string | null;
   run_id: string | null;
+  /** USD billed by the provider. Rendered via formatCost() in the app's unit. */
+  cost_usd: number | null;
   created_at: string;
 }
 
@@ -30,11 +32,30 @@ export interface WorkflowRun {
   completed_at: string | null;
 }
 
+/**
+ * A reusable style definition. Applied to a generation by id — the server
+ * expands it into the prompt (instruction + palette) and prepends its
+ * reference images to `input_images`, so every consumer composes identically.
+ */
+export interface StylePreset {
+  id: string;
+  name: string;
+  instruction: string;
+  /** Hex colours, e.g. ["#0f172a", "#f97316"]. */
+  palette: string[];
+  /** Image URLs handed to the model as visual references. */
+  reference_images: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ModelOption {
   id: string;
   name: string;
   /** Which upstream the request is routed to. Used by the UI to decide which provider-specific options (e.g. OpenAI's `quality`) to show. */
   provider?: "openrouter" | "openai" | "fal" | "anthropic";
+  /** USD per output image *token* (OpenRouter `pricing.image_output`) — comparable across models, not a per-image price. */
+  imageTokenPrice?: number;
 }
 
 export interface PromptNodeData {
@@ -60,6 +81,14 @@ export interface GenerateNodeData {
   imageUrl?: string;
   error?: string;
   lastPrompt?: string;
+  /** USD billed for the last successful generation on this node. */
+  lastCostUsd?: number;
+}
+
+export interface StyleNodeData {
+  label: string;
+  /** Empty until a preset is picked; generation then runs unstyled. */
+  presetId: string;
 }
 
 export interface ImageInputNodeData {
@@ -110,6 +139,7 @@ export interface RefineNodeData {
 export type FlowNodeData =
   | PromptNodeData
   | GenerateNodeData
+  | StyleNodeData
   | ImageInputNodeData
   | OutputNodeData
   | AnalyzeNodeData

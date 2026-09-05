@@ -1,8 +1,9 @@
 import { createApp, createRoute, z, OpenAPIHono } from "@clawnify/app";
 import { query, get, run } from "./db.js";
 import { initUploads, putUpload, getUpload, deleteUpload, readUploadAsBase64DataUrl } from "./uploads.js";
+import { listOpenRouterImageModels, extractCostUsd, resolveCostUnit } from "./pricing.js";
 
-type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; ANTHROPIC_API_KEY?: string } };
+type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; ANTHROPIC_API_KEY?: string; CLAWNIFY_TOKEN?: string } };
 
 const app = createApp<Env>({
   title: "OpenStudio",
@@ -49,7 +50,17 @@ function ensureSchema(db: D1Database): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_id)`,
       `ALTER TABLE generations ADD COLUMN run_id TEXT`,
+      `ALTER TABLE generations ADD COLUMN cost_usd REAL`,
       `CREATE INDEX IF NOT EXISTS idx_generations_run ON generations(run_id)`,
+      `CREATE TABLE IF NOT EXISTS style_presets (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT 'Untitled Style',
+        instruction TEXT NOT NULL DEFAULT '',
+        palette TEXT NOT NULL DEFAULT '[]',
+        reference_images TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
     ];
     for (const sql of statements) {
       try {
@@ -72,6 +83,16 @@ const WorkflowSchema = z.object({
   nodes: z.string(),
   edges: z.string(),
   viewport: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+const StylePresetSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  instruction: z.string(),
+  palette: z.array(z.string()),
+  reference_images: z.array(z.string()),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -237,6 +258,186 @@ app.openapi(deleteWorkflow, async (c) => {
   return c.json({ ok: true }, 200);
 });
 
+// ── Style presets ────────────────────────────────────────────────────
+// A style preset is a reusable "lock your style once" definition: a written
+// style instruction, an optional hex palette, and optional reference images.
+// It is stored once and referenced by id from style nodes and Quick Generate;
+// the expansion into prompt + input images happens server-side (see
+// applyStylePreset) so every caller — canvas, quick generate, public API —
+// composes it identically.
+
+/** As stored: `palette` and `reference_images` are JSON text columns. */
+type StylePresetRow = Omit<z.infer<typeof StylePresetSchema>, "palette" | "reference_images"> & {
+  palette: string;
+  reference_images: string;
+};
+
+/** Parse a JSON text column into a string array, tolerating legacy/blank values. */
+function parseStringArray(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Rows store JSON text; the API speaks arrays in both directions. */
+function toStylePreset(row: StylePresetRow): z.infer<typeof StylePresetSchema> {
+  return {
+    ...row,
+    palette: parseStringArray(row.palette),
+    reference_images: parseStringArray(row.reference_images),
+  };
+}
+
+/**
+ * Expand a preset into the prompt and reference images for one generation.
+ * Reference images go first so the model reads them as the style anchor
+ * before any per-generation input images.
+ */
+async function applyStylePreset(
+  db: D1Database,
+  presetId: string | undefined,
+  model: string,
+  prompt: string,
+  inputImages: string[] | undefined,
+): Promise<{ prompt: string; input_images: string[] | undefined }> {
+  if (!presetId) return { prompt, input_images: inputImages };
+  await ensureSchema(db);
+  const preset = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [presetId]);
+  // A deleted preset must not silently abort the generation — run unstyled.
+  if (!preset) return { prompt, input_images: inputImages };
+
+  const palette = parseStringArray(preset.palette);
+  const refs = parseStringArray(preset.reference_images);
+
+  const useRefs = refs.length > 0 && acceptsStyleReferences(model, !!inputImages?.length);
+
+  const guide: string[] = [];
+  if (preset.instruction.trim()) guide.push(preset.instruction.trim());
+  if (palette.length) guide.push(`Use this colour palette: ${palette.join(", ")}.`);
+  if (useRefs) guide.push("Match the style, palette and treatment of the reference image(s) provided. Do not copy their subject matter.");
+
+  const styled = guide.length
+    ? `${prompt}\n\nStyle guide "${preset.name}" (apply consistently): ${guide.join(" ")}`
+    : prompt;
+
+  const images = [...(useRefs ? refs : []), ...(inputImages || [])];
+  return { prompt: styled, input_images: images.length ? images : undefined };
+}
+
+const listStylePresets = createRoute({
+  method: "get",
+  path: "/api/style-presets",
+  responses: { 200: { content: { "application/json": { schema: z.array(StylePresetSchema) } }, description: "OK" } },
+});
+
+app.openapi(listStylePresets, async (c) => {
+  await ensureSchema(c.env.DB);
+  const rows = await query<StylePresetRow>("SELECT * FROM style_presets ORDER BY updated_at DESC");
+  return c.json(rows.map(toStylePreset), 200);
+});
+
+const createStylePreset = createRoute({
+  method: "post",
+  path: "/api/style-presets",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string().optional(),
+            instruction: z.string().optional(),
+            palette: z.array(z.string()).optional(),
+            reference_images: z.array(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: { 200: { content: { "application/json": { schema: StylePresetSchema } }, description: "OK" } },
+});
+
+app.openapi(createStylePreset, async (c) => {
+  await ensureSchema(c.env.DB);
+  const body = c.req.valid("json");
+  const id = crypto.randomUUID();
+  await run(
+    "INSERT INTO style_presets (id, name, instruction, palette, reference_images) VALUES (?, ?, ?, ?, ?)",
+    [
+      id,
+      body.name?.trim() || "Untitled Style",
+      body.instruction || "",
+      JSON.stringify(body.palette || []),
+      JSON.stringify(body.reference_images || []),
+    ],
+  );
+  const row = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [id]);
+  return c.json(toStylePreset(row!), 200);
+});
+
+const updateStylePreset = createRoute({
+  method: "put",
+  path: "/api/style-presets/{id}",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            name: z.string().optional(),
+            instruction: z.string().optional(),
+            palette: z.array(z.string()).optional(),
+            reference_images: z.array(z.string()).optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: StylePresetSchema } }, description: "OK" },
+    404: { content: { "application/json": { schema: ErrorSchema } }, description: "Not found" },
+  },
+});
+
+app.openapi(updateStylePreset, async (c) => {
+  await ensureSchema(c.env.DB);
+  const { id } = c.req.valid("param");
+  const body = c.req.valid("json");
+
+  const sets: string[] = [];
+  const args: unknown[] = [];
+  if (body.name !== undefined) { sets.push("name = ?"); args.push(body.name.trim() || "Untitled Style"); }
+  if (body.instruction !== undefined) { sets.push("instruction = ?"); args.push(body.instruction); }
+  if (body.palette !== undefined) { sets.push("palette = ?"); args.push(JSON.stringify(body.palette)); }
+  if (body.reference_images !== undefined) { sets.push("reference_images = ?"); args.push(JSON.stringify(body.reference_images)); }
+
+  if (sets.length) {
+    sets.push("updated_at = datetime('now')");
+    await run(`UPDATE style_presets SET ${sets.join(", ")} WHERE id = ?`, [...args, id]);
+  }
+
+  const row = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [id]);
+  if (!row) return c.json({ error: "Not found" }, 404);
+  return c.json(toStylePreset(row), 200);
+});
+
+const deleteStylePreset = createRoute({
+  method: "delete",
+  path: "/api/style-presets/{id}",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: { content: { "application/json": { schema: z.object({ ok: z.boolean() }) } }, description: "OK" } },
+});
+
+app.openapi(deleteStylePreset, async (c) => {
+  await ensureSchema(c.env.DB);
+  const { id } = c.req.valid("param");
+  await run("DELETE FROM style_presets WHERE id = ?", [id]);
+  return c.json({ ok: true }, 200);
+});
+
 // ── File uploads ─────────────────────────────────────────────────────
 
 app.post("/api/uploads", async (c) => {
@@ -272,19 +473,18 @@ app.get("/api/uploads/:filename", async (c) => {
 
 // ── Image generation (OpenRouter proxy) ──────────────────────────────
 
-const IMAGE_ONLY_MODELS = new Set([
-  "black-forest-labs/flux.2-max",
-  "black-forest-labs/flux.2-klein-4b",
-  "sourceful/riverflow-v2-fast",
-  "bytedance-seed/seedream-4.5",
-]);
+// Models that reject `modalities: ["image", "text"]` and need image-only. Empty
+// because every model that needed it (FLUX.2, Riverflow, SeedDream) has since
+// been withdrawn from OpenRouter — kept as the place to list the next one,
+// since the live catalogue cannot tell us which models have this constraint.
+const IMAGE_ONLY_MODELS = new Set<string>([]);
 
 // Explicit allowlist of models that get routed to OpenAI's REST API directly
 // (when OPENAI_API_KEY is set). The `openai/` prefix alone is NOT enough since
-// OpenRouter also uses it (e.g. openai/gpt-image-1 lives there).
-const OPENAI_DIRECT_MODELS = new Set([
-  "openai/gpt-image-2",
-  "openai/gpt-image-2-2026-04-21",
+// OpenRouter also uses it (e.g. openai/gpt-5-image lives there).
+const OPENAI_DIRECT_MODELS = new Map<string, string>([
+  ["openai/gpt-image-2", "GPT Image 2 (OpenAI direct)"],
+  ["openai/gpt-image-2-2026-04-21", "GPT Image 2 · 2026-04-21 (OpenAI direct)"],
 ]);
 
 // fal.ai text-to-image models routed directly to fal.run (when FAL_API_KEY is
@@ -611,7 +811,7 @@ async function generateImageOpenRouter(
   apiKey: string,
   params: { model: string; prompt: string; aspect_ratio: string; image_size: string; input_images?: string[] },
   opts?: { onRateLimit?: () => void },
-): Promise<{ images: Array<{ url: string }>; text?: string }> {
+): Promise<{ images: Array<{ url: string }>; text?: string; costUsd?: number }> {
   const { model, prompt, aspect_ratio, image_size, input_images } = params;
   const modalities = IMAGE_ONLY_MODELS.has(model) ? ["image"] : ["image", "text"];
 
@@ -636,6 +836,7 @@ async function generateImageOpenRouter(
   let lastError: Error | null = null;
   let data: {
     choices?: Array<{ message?: { content?: string; images?: Array<{ image_url: { url: string } }> } }>;
+    usage?: { cost?: number; cost_details?: { upstream_inference_cost?: number } };
   } | null = null;
   for (let attempt = 0; attempt < MAX_CONTENT_ATTEMPTS; attempt++) {
     try {
@@ -652,6 +853,8 @@ async function generateImageOpenRouter(
           messages: [{ role: "user", content }],
           modalities,
           image_config: { aspect_ratio, image_size },
+          // Returns `usage.cost` (and the BYOK upstream figure) on the response.
+          usage: { include: true },
         }),
       }, { onRateLimit: opts?.onRateLimit });
 
@@ -707,7 +910,7 @@ async function generateImageOpenRouter(
       images.push({ url: remoteUrl });
     }
   }
-  return { images, text: message?.content || undefined };
+  return { images, text: message?.content || undefined, costUsd: extractCostUsd(data.usage) };
 }
 
 /**
@@ -717,6 +920,23 @@ async function generateImageOpenRouter(
  * (the default for every other model). Throws on missing keys / unsupported
  * combinations so callers surface a clear error.
  */
+/**
+ * Whether a preset's reference images can be attached to this request.
+ *
+ * `input_images` is not a neutral field — routeImageGeneration branches on it:
+ * fal models reject a non-empty list outright, and OpenAI-direct models switch
+ * from generate to edit. Silently inheriting either would turn "apply a style"
+ * into a hard error or a different API call, so preset references are dropped
+ * where they would do that. The written direction and palette still apply.
+ */
+function acceptsStyleReferences(model: string, callerSuppliedImages: boolean): boolean {
+  // Text-to-image only — any reference image is a hard error.
+  if (FAL_IMAGE_MODELS.has(model)) return false;
+  // Safe only when the request is already an edit; otherwise refs would flip it.
+  if (OPENAI_DIRECT_MODELS.has(model)) return callerSuppliedImages;
+  return true;
+}
+
 async function routeImageGeneration(
   env: Env["Bindings"],
   params: {
@@ -728,7 +948,7 @@ async function routeImageGeneration(
     input_images?: string[];
   },
   opts?: { onRateLimit?: () => void },
-): Promise<{ images: Array<{ url: string }>; text?: string }> {
+): Promise<{ images: Array<{ url: string }>; text?: string; costUsd?: number }> {
   const { model, prompt, aspect_ratio, image_size, quality, input_images } = params;
 
   if (OPENAI_DIRECT_MODELS.has(model)) {
@@ -775,6 +995,7 @@ const generateImage = createRoute({
             image_size: z.string().default("1K"),
             quality: z.enum(["auto", "low", "medium", "high"]).optional(),
             input_images: z.array(z.string()).optional(),
+            style_preset_id: z.string().optional(),
           }),
         },
       },
@@ -787,6 +1008,8 @@ const generateImage = createRoute({
           schema: z.object({
             images: z.array(z.object({ url: z.string() })),
             text: z.string().optional(),
+            /** USD actually billed for this generation, when upstream reports it. */
+            costUsd: z.number().optional(),
           }),
         },
       },
@@ -797,10 +1020,11 @@ const generateImage = createRoute({
 });
 
 app.openapi(generateImage, async (c) => {
-  const { prompt, model, aspect_ratio, image_size, quality, input_images } = c.req.valid("json");
+  const { prompt, model, aspect_ratio, image_size, quality, input_images, style_preset_id } = c.req.valid("json");
   try {
+    const styled = await applyStylePreset(c.env.DB, style_preset_id, model, prompt, input_images);
     const result = await routeImageGeneration(c.env, {
-      model, prompt, aspect_ratio, image_size, quality, input_images,
+      model, prompt: styled.prompt, aspect_ratio, image_size, quality, input_images: styled.input_images,
     });
     return c.json(result, 200);
   } catch (err) {
@@ -821,6 +1045,8 @@ const listModels = createRoute({
             id: z.string(),
             name: z.string(),
             provider: z.enum(["openrouter", "openai", "fal"]).optional(),
+            /** USD per output image *token*, when the upstream publishes a price. */
+            imageTokenPrice: z.number().optional(),
           })),
         },
       },
@@ -837,6 +1063,8 @@ app.get("/api/features", (c) => {
     openai: !!c.env.OPENAI_API_KEY,
     fal: !!c.env.FAL_API_KEY,
     anthropic: !!c.env.ANTHROPIC_API_KEY,
+    // Which unit generation cost is shown in. See resolveCostUnit().
+    costUnit: resolveCostUnit(c.env),
   }, 200);
 });
 
@@ -844,31 +1072,24 @@ app.openapi(listModels, async (c) => {
   const hasOpenRouter = !!c.env.OPENROUTER_API_KEY;
   const hasOpenAI = !!c.env.OPENAI_API_KEY;
   const hasFal = !!c.env.FAL_API_KEY;
-  const baseModels: Array<{ id: string; name: string }> = [
-    { id: "google/gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image" },
-    { id: "google/gemini-3-pro-image-preview", name: "Gemini 3 Pro Image" },
-    { id: "openai/gpt-image-2-2026-04-21", name: "GPT Image 2 (2026-04-21 snapshot)" },
-    { id: "openai/gpt-image-2", name: "GPT Image 2 (OpenAI direct)" },
-    { id: "openai/gpt-image-1", name: "GPT Image 1" },
-    { id: "openai/gpt-5-image-mini", name: "GPT-5 Image Mini" },
-    { id: "openai/gpt-5-image", name: "GPT-5 Image" },
-    { id: "openai/gpt-5.4-image-2", name: "GPT-5.4 Image 2" },
-    { id: "google/gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image" },
-    { id: "bytedance-seed/seedream-4.5", name: "SeedDream 4.5" },
-    { id: "black-forest-labs/flux.2-max", name: "FLUX.2 Max" },
-    { id: "black-forest-labs/flux.2-klein-4b", name: "FLUX.2 Klein 4B" },
-    { id: "sourceful/riverflow-v2-fast", name: "Riverflow v2 Fast" },
-  ];
-  const models = baseModels
-    .map((m) => ({
-      ...m,
-      provider: (OPENAI_DIRECT_MODELS.has(m.id) ? "openai" : "openrouter") as "openai" | "openrouter" | "fal",
-    }))
-    .filter((m) => (m.provider === "openai" ? hasOpenAI : hasOpenRouter));
+
+  // Listed live so a withdrawn model disappears from the picker instead of
+  // failing at generate time. See pricing.ts for why this is not a static list.
+  const openRouterModels = hasOpenRouter
+    ? await listOpenRouterImageModels(c.env.OPENROUTER_API_KEY)
+    : [];
+
+  // OpenAI-direct entries bypass OpenRouter (own key, own REST API), so they are
+  // not in that catalogue and stay declared here. No published per-image price.
+  const openAiModels = hasOpenAI
+    ? Array.from(OPENAI_DIRECT_MODELS.entries()).map(([id, name]) => ({ id, name, provider: "openai" as const }))
+    : [];
+
   const falModels = hasFal
     ? Array.from(FAL_IMAGE_MODELS.entries()).map(([id, name]) => ({ id, name, provider: "fal" as const }))
     : [];
-  return c.json([...models, ...falModels], 200);
+
+  return c.json([...openRouterModels, ...openAiModels, ...falModels], 200);
 });
 
 // ── Analyze (vision → text/JSON) ─────────────────────────────────────
@@ -1380,6 +1601,7 @@ const GenerationSchema = z.object({
   status: z.string(),
   error: z.string().nullable(),
   run_id: z.string().nullable().optional(),
+  cost_usd: z.number().nullable().optional(),
   created_at: z.string(),
 });
 
@@ -1417,6 +1639,7 @@ const saveGeneration = createRoute({
             status: z.string(),
             error: z.string().nullable().optional(),
             run_id: z.string().nullable().optional(),
+            cost_usd: z.number().nullable().optional(),
           }),
         },
       },
@@ -1432,8 +1655,8 @@ app.openapi(saveGeneration, async (c) => {
   const body = c.req.valid("json");
   const id = crypto.randomUUID();
   await run(
-    "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    [id, body.workflow_id, body.node_id, body.prompt, body.model, body.image_url, body.status, body.error ?? null, body.run_id ?? null],
+    "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error, run_id, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [id, body.workflow_id, body.node_id, body.prompt, body.model, body.image_url, body.status, body.error ?? null, body.run_id ?? null, body.cost_usd ?? null],
   );
   const row = await get<z.infer<typeof GenerationSchema>>("SELECT * FROM generations WHERE id = ?", [id]);
   return c.json(row!, 200);
@@ -1776,8 +1999,8 @@ publicApp.openapi(executeWorkflow, async (c) => {
 
           // Save generation
           await run(
-            "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [crypto.randomUUID(), wf.id, nodeId, prompt, model, imageUrl || null, "success", null],
+            "INSERT INTO generations (id, workflow_id, node_id, prompt, model, image_url, status, error, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [crypto.randomUUID(), wf.id, nodeId, prompt, model, imageUrl || null, "success", null, result.costUsd ?? null],
           );
         } catch (err) {
           outputs.set(nodeId, { promptText: prompt });
