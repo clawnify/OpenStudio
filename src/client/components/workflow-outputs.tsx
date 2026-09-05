@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { Download, Trash2, RotateCcw, MessageSquare, Copy, Check } from "lucide-react";
+import { Download, Trash2, RotateCcw, MessageSquare, Copy, Check, Columns2, History, GitCompare } from "lucide-react";
 import { useWorkflow } from "../context";
 import { FeedbackDialog } from "./feedback-dialog";
 import { ImageLightbox } from "./image-lightbox";
+import { CompareView } from "./compare-view";
+import { NodeHistoryDialog } from "./node-history-dialog";
 import { downloadImage } from "../download";
 import { formatCost, sumCost } from "../cost";
 import type { Generation } from "../types";
@@ -16,6 +18,19 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
   const [selected, setSelected] = useState<Generation | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [feedbackTarget, setFeedbackTarget] = useState<Generation | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<Generation | null>(null);
+  const [comparing, setComparing] = useState<[Generation, Generation] | null>(null);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+
+  const comparePair = compareIds
+    .map((id) => generations.find((g) => g.id === id))
+    .filter((g): g is Generation => !!g);
+  const toggleCompare = (id: string) => {
+    setCompareIds((prev) => {
+      if (prev.includes(id)) return prev.filter((p) => p !== id);
+      return [...prev, id].slice(-2);
+    });
+  };
 
   const loadIntoCanvas = async (runId: string) => {
     await loadRun(runId);
@@ -26,6 +41,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
   // without forcing the user to reload the page.
   useEffect(() => {
     refreshGenerations();
+    setCompareIds([]);
   }, [refreshGenerations, activeWorkflow?.id]);
 
   const copyPrompt = async (id: string, prompt: string) => {
@@ -127,6 +143,24 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                     </>
                   )}
                   <button
+                    className={`inline-flex items-center justify-center text-white border-none rounded-sm p-1 cursor-pointer transition-colors ${
+                      compareIds.includes(gen.id) ? "bg-link hover:bg-link" : "bg-black/60 hover:bg-black/80"
+                    }`}
+                    onClick={(e) => { e.stopPropagation(); toggleCompare(gen.id); }}
+                    title={compareIds.includes(gen.id) ? "Remove from compare" : "Pick for side-by-side compare"}
+                  >
+                    <Columns2 size={12} />
+                  </button>
+                  {gen.node_id && (
+                    <button
+                      className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                      onClick={(e) => { e.stopPropagation(); setHistoryTarget(gen); }}
+                      title="Version history of this node"
+                    >
+                      <History size={12} />
+                    </button>
+                  )}
+                  <button
                     className="inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 cursor-pointer"
                     onClick={(e) => { e.stopPropagation(); if (confirm("Delete this image? This cannot be undone.")) deleteGeneration(gen.id); }}
                     title="Delete this output"
@@ -175,6 +209,27 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
         ))}
       </div>
 
+      {comparePair.length === 2 && (
+        <div
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[900] inline-flex items-center gap-2 text-xs text-white bg-black/80 rounded-full px-2 py-1.5 shadow-md"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="pl-2 text-white/80">2 picked for compare</span>
+          <button
+            className="inline-flex items-center gap-1 text-white bg-white/20 hover:bg-white/30 border-none rounded-full px-2.5 py-1 cursor-pointer"
+            onClick={() => setCompareIds([])}
+          >
+            Clear
+          </button>
+          <button
+            className="inline-flex items-center gap-1.5 text-black bg-white hover:bg-white/90 border-none rounded-full px-3 py-1 cursor-pointer"
+            onClick={() => setComparing(comparePair as [Generation, Generation])}
+          >
+            <GitCompare size={12} /> Compare
+          </button>
+        </div>
+      )}
+
       <ImageLightbox
         src={selected?.image_url || null}
         filename={selected ? `${selected.node_id}-${selected.id}.png` : undefined}
@@ -188,6 +243,35 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
         generation={feedbackTarget}
         onSubmitted={() => { setFeedbackTarget(null); onLoaded?.(); }}
       />
+
+      {comparing && (
+        <CompareView
+          left={comparing[0]}
+          right={comparing[1]}
+          onRestore={async (runId) => {
+            await loadIntoCanvas(runId);
+            setComparing(null);
+            setCompareIds([]);
+          }}
+          onClose={() => setComparing(null)}
+        />
+      )}
+
+      {historyTarget && (
+        <NodeHistoryDialog
+          generations={generations}
+          target={historyTarget}
+          onRestore={async (runId) => {
+            await loadIntoCanvas(runId);
+            setHistoryTarget(null);
+          }}
+          onCompare={(gen) => {
+            setHistoryTarget(null);
+            setCompareIds([gen.id]);
+          }}
+          onClose={() => setHistoryTarget(null)}
+        />
+      )}
     </div>
   );
 }
