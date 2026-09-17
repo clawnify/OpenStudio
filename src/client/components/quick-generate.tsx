@@ -378,12 +378,14 @@ export function QuickGenerate() {
         </div>
         <div className="flex items-center justify-between px-4 pb-3 pt-0">
           <div className="flex items-center gap-2 flex-wrap">
+            {models.length > 0 && (
             <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken max-w-[260px]" value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)}>
               {models.map((m) => {
                 const price = relativePrice(m.imageTokenPrice, tokenPrices);
                 return <option key={m.id} value={m.id}>{price ? `${m.name} · ${price}` : m.name}</option>;
               })}
             </select>
+            )}
             <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken" value={aspectRatio} onChange={(e) => setAspectRatio((e.target as HTMLSelectElement).value)}>
               {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
