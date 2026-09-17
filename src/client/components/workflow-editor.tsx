@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useEffect } from "react";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useWorkflow } from "../context";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { WorkflowOutputs } from "./workflow-outputs";
@@ -15,7 +15,11 @@ export function WorkflowEditor() {
   const { id } = useParams();
   const wid = id ?? "";
   const { workflows, activeWorkflow, selectWorkflow } = useWorkflow();
-  const [workflowView, setWorkflowView] = useState<"canvas" | "outputs">("canvas");
+  // The view lives in the URL so a reload (or a shared link) reopens it.
+  const [params, setParams] = useSearchParams();
+  const workflowView: "canvas" | "outputs" = params.get("view") === "outputs" ? "outputs" : "canvas";
+  const setWorkflowView = (view: "canvas" | "outputs") =>
+    setParams(view === "outputs" ? { view } : {}, { replace: true });
 
   useEffect(() => {
     if (wid && activeWorkflow?.id !== wid && workflows.some((w) => w.id === wid)) {

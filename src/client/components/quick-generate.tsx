@@ -118,7 +118,10 @@ function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSou
 }
 
 export function QuickGenerate() {
-  const { models, stylePresets, features: { costUnit } } = useWorkflow();
+  const { models, stylePresets, features } = useWorkflow();
+  const { costUnit } = features;
+  // No provider key means nothing can generate; say so instead of a dead button.
+  const noProvider = !features.openrouter && !features.openai && !features.fal;
   const [prompt, setPrompt] = useState("");
   // Empty until /api/models resolves — the catalogue is live, so hardcoding a
   // default risks defaulting to a model that has been withdrawn upstream.
@@ -299,7 +302,7 @@ export function QuickGenerate() {
       <div className="flex-1 overflow-y-auto" ref={gridRef}>
         {generations.length === 0 && !generating && (
           <div className="h-full flex items-center justify-center">
-            <p className="text-muted text-sm">Describe the scene you imagine</p>
+            <p className="text-muted text-sm">{noProvider ? "Connect an image provider to start generating" : "Describe the scene you imagine"}</p>
           </div>
         )}
         {containerWidth > 0 && (
@@ -323,6 +326,12 @@ export function QuickGenerate() {
         <div className="flex items-center justify-between px-4 py-2 bg-danger-tint border-t border-border text-danger text-xs shrink-0">
           <span>{error}</span>
           <button className="bg-transparent border-none text-danger text-lg cursor-pointer" onClick={() => setError(null)}>&times;</button>
+        </div>
+      )}
+
+      {noProvider && (
+        <div role="status" className="shrink-0 mx-auto mb-2 w-full max-w-3xl rounded-md border border-border bg-surface-sunken px-4 py-2.5 text-xs text-muted">
+          No image model is connected. Add an OpenRouter, OpenAI or fal.ai API key to this app to generate images.
         </div>
       )}
 
@@ -410,7 +419,7 @@ export function QuickGenerate() {
           <button
             className="h-10 px-6 rounded-sm bg-primary text-on-primary text-sm font-semibold border-none cursor-pointer shrink-0 flex items-center gap-1.5 transition-all hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
             onClick={generate}
-            disabled={generating || !prompt.trim()}
+            disabled={generating || !prompt.trim() || noProvider}
           >
             {generating ? <span className="spinner !border-white/30 !border-t-white" /> : <>Generate{imageCount > 1 && <><Sparkles className="size-4" />{imageCount}</>}</>}
           </button>

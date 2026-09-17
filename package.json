@@ -7,10 +7,12 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@clawnify/app": "^0.1.0",
-    "@clawnify/db": "^0.4.1",
+    "@clawnify/app": "^0.2.1",
+    "@clawnify/db": "^0.4.2",
     "@fontsource-variable/geist": "^5.2.8",
+    "@fontsource-variable/inter": "^5.3.0",
     "@hono/zod-openapi": "^0.18.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.2.2",
     "@xyflow/react": "^12.0.0",
     "class-variance-authority": "^0.7.1",

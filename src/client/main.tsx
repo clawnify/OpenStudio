@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./app";
+import "@fontsource-variable/inter/wght.css";
 import "./styles.css";
 
 // Mirror the system theme onto a `.dark` class so shadcn's dark: variants

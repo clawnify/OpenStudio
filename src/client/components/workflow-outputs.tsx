@@ -21,6 +21,8 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
   const [historyTarget, setHistoryTarget] = useState<Generation | null>(null);
   const [comparing, setComparing] = useState<[Generation, Generation] | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  // Inline confirmation: native confirm() is blocked when the app is embedded.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const comparePair = compareIds
     .map((id) => generations.find((g) => g.id === id))
@@ -162,7 +164,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                   )}
                   <button
                     className="inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 cursor-pointer"
-                    onClick={(e) => { e.stopPropagation(); if (confirm("Delete this image? This cannot be undone.")) deleteGeneration(gen.id); }}
+                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(gen.id); }}
                     title="Delete this output"
                   >
                     <Trash2 size={12} />
@@ -177,7 +179,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                 </div>
                 <button
                   className="absolute top-1.5 right-1.5 inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-                  onClick={(e) => { e.stopPropagation(); if (confirm("Delete this entry? This cannot be undone.")) deleteGeneration(gen.id); }}
+                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(gen.id); }}
                   title="Delete this entry"
                 >
                   <Trash2 size={12} />
@@ -185,6 +187,25 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
               </div>
             )}
             <div className="p-2.5 border-t border-border">
+              {confirmDeleteId === gen.id && (
+                <div role="group" aria-label="Confirm delete" className="flex items-center justify-between gap-2 mb-2 text-[11px]">
+                  <span className="text-danger">Delete this {gen.image_url ? "image" : "entry"}? This cannot be undone.</span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <button
+                      className="font-semibold text-danger bg-transparent border-none p-0 cursor-pointer hover:underline"
+                      onClick={() => { setConfirmDeleteId(null); deleteGeneration(gen.id); }}
+                    >
+                      Delete
+                    </button>
+                    <button
+                      className="text-muted bg-transparent border-none p-0 cursor-pointer hover:underline"
+                      onClick={() => setConfirmDeleteId(null)}
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                </div>
+              )}
               <p className="text-[11px] text-muted line-clamp-2 leading-snug min-h-[28px]">{gen.prompt}</p>
               <div className="flex items-center justify-between mt-1.5 gap-2">
                 <span className="flex items-baseline gap-1.5 min-w-0 text-[10px] text-faint">
