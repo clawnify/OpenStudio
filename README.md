@@ -4,8 +4,6 @@
 
 [![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/OpenStudio)
 
-**[Try the live demo →](https://app.clawnify.com/demo/workspaces/studio)** — no signup. You get your own sandbox copy with sample data; image generation is disabled in the demo, so nothing you click costs anything.
-
 A visual AI image generation studio with a justified gallery and node-based workflow editor. Built with **React + Tailwind CSS + Hono**. An open-source app template provided by [Clawnify](https://clawnify.com).
 
 ## Features
