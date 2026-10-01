@@ -304,7 +304,7 @@ export function useWorkflowState(): WorkflowContextValue {
   }, []);
 
   const saveStylePreset = useCallback(async (
-    preset: Pick<StylePreset, "name" | "instruction" | "palette" | "reference_images"> & { id?: string },
+    preset: Pick<StylePreset, "kind" | "name" | "instruction" | "palette" | "reference_images"> & { id?: string },
   ) => {
     const { id, ...body } = preset;
     try {
@@ -360,6 +360,9 @@ export function useWorkflowState(): WorkflowContextValue {
           break;
         case "style":
           data = { label: "Style", presetId: "" };
+          break;
+        case "subject":
+          data = { label: "Subject", presetId: "" };
           break;
         case "analyze":
           data = { label: "Analyze", prompt: "Describe what you see.", model: "~google/gemini-flash-latest", outputFormat: "text", status: "idle" };
@@ -437,9 +440,11 @@ export function useWorkflowState(): WorkflowContextValue {
 
   // ── Workflow execution engine ──────────────────────────────────
 
-  // `stylePresetId` is its own channel: a style node must not leak into the
-  // text or image channels, or it would be read as prompt copy / an edit source.
-  type ExecOutputValue = { text?: string; promptText?: string; imageUrl?: string; imageUrls?: string[]; stylePresetId?: string };
+  // `stylePresetId` / `subjectPresetId` are their own channels: a preset node must
+  // not leak into the text or image channels, or it would be read as prompt copy /
+  // an edit source. They stay separate from each other too, so a character and a
+  // look can feed the same Generate node without one overwriting the other.
+  type ExecOutputValue = { text?: string; promptText?: string; imageUrl?: string; imageUrls?: string[]; stylePresetId?: string; subjectPresetId?: string };
   type ExecOutputs = Map<string, ExecOutputValue>;
 
   const executeNode = useCallback(async (
@@ -459,6 +464,7 @@ export function useWorkflowState(): WorkflowContextValue {
         const inputImages: string[] = [];
         // Last wired style node wins if several are connected to one node.
         let stylePresetId: string | undefined;
+        let subjectPresetId: string | undefined;
         for (const edge of incoming) {
           const out = outputs.get(edge.source);
           if (out?.text) inputText += (inputText ? "\n" : "") + out.text;
@@ -468,6 +474,7 @@ export function useWorkflowState(): WorkflowContextValue {
           if (out?.imageUrl) inputImages.push(out.imageUrl);
           if (out?.imageUrls) inputImages.push(...out.imageUrls);
           if (out?.stylePresetId) stylePresetId = out.stylePresetId;
+          if (out?.subjectPresetId) subjectPresetId = out.subjectPresetId;
         }
 
         const data = node.data as Record<string, unknown>;
@@ -502,6 +509,10 @@ export function useWorkflowState(): WorkflowContextValue {
             outputs.set(nodeId, { stylePresetId: (data.presetId as string) || undefined });
             break;
           }
+          case "subject": {
+            outputs.set(nodeId, { subjectPresetId: (data.presetId as string) || undefined });
+            break;
+          }
           case "generateImage": {
             const basePrompt = inputText || inputPromptText || "A beautiful image";
             const feedback = ((data.feedback as string) || "").trim();
@@ -519,7 +530,7 @@ export function useWorkflowState(): WorkflowContextValue {
               const result = await api<{ images: Array<{ url: string }>; text?: string; costUsd?: number }>(
                 "POST",
                 "/api/generate",
-                { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, quality, input_images: inputImages.length ? inputImages : undefined, style_preset_id: stylePresetId }
+                { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, quality, input_images: inputImages.length ? inputImages : undefined, style_preset_id: stylePresetId, subject_preset_id: subjectPresetId }
               );
 
               const img = result.images[0];
@@ -916,6 +927,7 @@ export function useWorkflowState(): WorkflowContextValue {
         const d = src.data as Record<string, unknown>;
         const out: ExecOutputValue = {};
         if (src.type === "style") out.stylePresetId = (d.presetId as string) || undefined;
+        if (src.type === "subject") out.subjectPresetId = (d.presetId as string) || undefined;
 
         // For prompt nodes, recursively resolve {{nodeId}} pill references
         // against the current canvas — single-node re-runs don't have a
@@ -1008,6 +1020,7 @@ export function useWorkflowState(): WorkflowContextValue {
         const d = src.data as Record<string, unknown>;
         const out: ExecOutputValue = {};
         if (src.type === "style") out.stylePresetId = (d.presetId as string) || undefined;
+        if (src.type === "subject") out.subjectPresetId = (d.presetId as string) || undefined;
         const txt = src.type === "prompt" ? resolvePromptText(edge.source, 0) : ((d.text as string) || (d.result as string));
         if (txt) out.text = txt;
         const img = d.imageUrl as string;

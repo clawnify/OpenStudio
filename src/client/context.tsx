@@ -63,7 +63,7 @@ export interface WorkflowContextValue {
   refreshStylePresets: () => Promise<void>;
   /** Create (no id) or update (id) a preset. Returns the saved row, or undefined on failure. */
   saveStylePreset: (
-    preset: Pick<StylePreset, "name" | "instruction" | "palette" | "reference_images"> & { id?: string },
+    preset: Pick<StylePreset, "kind" | "name" | "instruction" | "palette" | "reference_images"> & { id?: string },
   ) => Promise<StylePreset | undefined>;
   deleteStylePreset: (id: string) => Promise<void>;
 

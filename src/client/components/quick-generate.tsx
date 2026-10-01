@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, type DragEvent, type KeyboardEvent } from "react";
-import { Sparkles, Copy, Palette } from "lucide-react";
+import { Sparkles, Copy, Palette, UserRound } from "lucide-react";
 import { useWorkflow } from "../context";
 import { api } from "../api";
 import { formatCost, relativePrice } from "../cost";
@@ -138,6 +138,8 @@ export function QuickGenerate() {
   const [barDragOver, setBarDragOver] = useState(false);
   const [stylePresetId, setStylePresetId] = useState("");
   const [managingStyles, setManagingStyles] = useState(false);
+  const [subjectPresetId, setSubjectPresetId] = useState("");
+  const [managingSubjects, setManagingSubjects] = useState(false);
   const [containerWidth, setContainerWidth] = useState(0);
   const [imageDims, setImageDims] = useState<Record<string, number>>({});
   const fileRef = useRef<HTMLInputElement>(null);
@@ -214,7 +216,7 @@ export function QuickGenerate() {
       for (let i = 0; i < imageCount; i++) {
         const result = await api<{ images: Array<{ url: string }>; text?: string; costUsd?: number }>(
           "POST", "/api/generate",
-          { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, input_images: attachments.length ? attachments : undefined, style_preset_id: stylePresetId || undefined }
+          { prompt, model, aspect_ratio: aspectRatio, image_size: imageSize, input_images: attachments.length ? attachments : undefined, style_preset_id: stylePresetId || undefined, subject_preset_id: subjectPresetId || undefined }
         );
         const img = result.images[0];
         const imageUrl = img?.url || "";
@@ -228,7 +230,7 @@ export function QuickGenerate() {
         setPendingCount((c) => c - 1);
       }
     } catch (e) { setError(String(e)); } finally { setGenerating(false); setPendingCount(0); }
-  }, [prompt, model, aspectRatio, imageSize, imageCount, attachments, generating, stylePresetId]);
+  }, [prompt, model, aspectRatio, imageSize, imageCount, attachments, generating, stylePresetId, subjectPresetId]);
 
   const onKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); }
@@ -393,6 +395,23 @@ export function QuickGenerate() {
               {IMAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <div className="flex items-center h-8 bg-surface-sunken border border-border rounded-full pl-2.5 pr-1 gap-1">
+              <UserRound className={`size-3.5 shrink-0 ${subjectPresetId ? "text-primary" : "text-muted"}`} />
+              <select
+                className="h-full max-w-[10rem] bg-transparent border-none text-muted text-xs font-medium pr-1 cursor-pointer outline-none appearance-none"
+                value={subjectPresetId}
+                onChange={(e) => {
+                  const v = (e.target as HTMLSelectElement).value;
+                  if (v === "__manage") { setManagingSubjects(true); return; }
+                  setSubjectPresetId(v);
+                }}
+                title="Keep the same character or product across every generation"
+              >
+                <option value="">No subject</option>
+                {stylePresets.filter((p) => p.kind === "subject").map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                <option value="__manage">Manage subjects...</option>
+              </select>
+            </div>
+            <div className="flex items-center h-8 bg-surface-sunken border border-border rounded-full pl-2.5 pr-1 gap-1">
               <Palette className={`size-3.5 shrink-0 ${stylePresetId ? "text-primary" : "text-muted"}`} />
               <select
                 className="h-full max-w-[10rem] bg-transparent border-none text-muted text-xs font-medium pr-1 cursor-pointer outline-none appearance-none"
@@ -405,7 +424,7 @@ export function QuickGenerate() {
                 title="Apply a saved style to every generation"
               >
                 <option value="">No style</option>
-                {stylePresets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {stylePresets.filter((p) => p.kind === "style").map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 <option value="__manage">Manage styles...</option>
               </select>
             </div>
@@ -430,7 +449,8 @@ export function QuickGenerate() {
 
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadFile(f); }} />
 
-      <StylePresetsDialog open={managingStyles} onOpenChange={setManagingStyles} onSaved={setStylePresetId} />
+      <StylePresetsDialog open={managingStyles} onOpenChange={setManagingStyles} kind="style" onSaved={setStylePresetId} />
+      <StylePresetsDialog open={managingSubjects} onOpenChange={setManagingSubjects} kind="subject" onSaved={setSubjectPresetId} />
 
       {selectedImage && (
         <div className="fixed inset-0 z-[1000] bg-black/70 flex items-center justify-center cursor-pointer" onClick={() => setSelectedImage(null)}>

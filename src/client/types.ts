@@ -37,8 +37,12 @@ export interface WorkflowRun {
  * expands it into the prompt (instruction + palette) and prepends its
  * reference images to `input_images`, so every consumer composes identically.
  */
+export type PresetKind = "style" | "subject";
+
 export interface StylePreset {
   id: string;
+  /** 'style' = how it looks. 'subject' = who/what it must stay across generations. */
+  kind: PresetKind;
   name: string;
   instruction: string;
   /** Hex colours, e.g. ["#0f172a", "#f97316"]. */
@@ -83,6 +87,12 @@ export interface GenerateNodeData {
   lastPrompt?: string;
   /** USD billed for the last successful generation on this node. */
   lastCostUsd?: number;
+}
+
+export interface SubjectNodeData {
+  label: string;
+  /** Empty until a subject preset is picked; generation then runs unlocked. */
+  presetId: string;
 }
 
 export interface StyleNodeData {
@@ -140,6 +150,7 @@ export type FlowNodeData =
   | PromptNodeData
   | GenerateNodeData
   | StyleNodeData
+  | SubjectNodeData
   | ImageInputNodeData
   | OutputNodeData
   | AnalyzeNodeData

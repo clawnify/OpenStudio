@@ -1,5 +1,5 @@
 import { type DragEvent } from "react";
-import { Pencil, Wand2, Camera, Palette, Search, LayoutGrid, Scaling, type LucideIcon } from "lucide-react";
+import { Pencil, Wand2, Camera, Palette, UserRound, Search, LayoutGrid, Scaling, type LucideIcon } from "lucide-react";
 import { useWorkflow } from "../context";
 
 interface NodeTypeEntry {
@@ -16,6 +16,7 @@ const NODE_TYPES: NodeTypeEntry[] = [
   { type: "generateImage", icon: Wand2, label: "Generate Image", desc: "AI image generation", requires: "imageGen" },
   { type: "imageInput", icon: Camera, label: "Image Input", desc: "Reference image URL" },
   { type: "style", icon: Palette, label: "Style", desc: "Apply a saved style preset" },
+  { type: "subject", icon: UserRound, label: "Subject", desc: "Lock a character or product" },
   { type: "analyze", icon: Search, label: "Analyze", desc: "Vision → text/JSON", requires: "openrouter" },
   { type: "refine", icon: LayoutGrid, label: "Refine", desc: "Tile-based image refinement", requires: "imageGen" },
   { type: "upscale", icon: Scaling, label: "Upscale", desc: "fal.ai SeedVR image upscaler", requires: "fal" },

@@ -12,6 +12,7 @@ A visual AI image generation studio with a justified gallery and node-based work
 - **Justified gallery** — generated images displayed in a pixel-perfect justified layout preserving aspect ratios
 - **Image-to-image** — drag a generated image or upload a file as source for the next generation
 - **Node-based workflows** — React Flow editor for building reusable multi-step generation pipelines
+- **Subject lock** — save a character or product once (reference images + the details that identify it) and keep it identical across a whole batch, varying only the scene. The instruction sent to the model says *"the SAME subject — identical face, hair, build and clothing"*, which is what reference images alone usually fail to convey
 - **Style presets** — save a look once (written direction, hex palette, reference images) and reuse it across every workflow, from a Style node on the canvas or the Quick Generate bar. Reference images are sent only to models that accept them; the rest still get the written direction and palette
 - **Prompt variables** — type `/` in a prompt node to reference another prompt's content with `{{}}` syntax, rendered as inline pills
 - **Auto-naming** — prompt nodes automatically get a descriptive title via Gemini 3.1 Flash Lite on blur
@@ -93,6 +94,7 @@ src/
         generate-node.tsx     — AI image generation node
         image-input-node.tsx  — Reference image upload node
         style-node.tsx        — Applies a saved style preset downstream
+        subject-node.tsx      — Locks a saved character/product downstream
         output-node.tsx       — Result display node
 ```
 
@@ -117,7 +119,7 @@ Inside a deployed instance, `schema.sql` becomes an auto-regenerated snapshot of
 | GET | `/api/models` | List available image models, with relative price |
 | GET | `/api/generations/:workflowId` | List generations for a workflow |
 | POST | `/api/generations` | Save a generation record |
-| GET | `/api/style-presets` | List style presets |
+| GET | `/api/style-presets` | List presets (style and subject) |
 | POST | `/api/style-presets` | Create a style preset |
 | PUT | `/api/style-presets/:id` | Update a style preset |
 | DELETE | `/api/style-presets/:id` | Delete a style preset |

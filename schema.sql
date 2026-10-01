@@ -44,6 +44,9 @@ CREATE INDEX IF NOT EXISTS idx_workflow_runs_workflow ON workflow_runs(workflow_
 -- input images server-side at generation time.
 CREATE TABLE IF NOT EXISTS style_presets (
   id TEXT PRIMARY KEY,
+  -- 'style' = how it should look. 'subject' = who/what it must stay, across
+  -- every generation. Same bundle, opposite instruction to the model.
+  kind TEXT NOT NULL DEFAULT 'style',
   name TEXT NOT NULL DEFAULT 'Untitled Style',
   instruction TEXT NOT NULL DEFAULT '',
   palette TEXT NOT NULL DEFAULT '[]',

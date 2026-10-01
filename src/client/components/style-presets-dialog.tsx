@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Palette, Plus, Trash2, Upload, X } from "lucide-react";
 import { useWorkflow } from "../context";
-import type { StylePreset } from "../types";
+import type { StylePreset, PresetKind } from "../types";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Which library this dialog manages. Style and subject never mix in one list. */
+  kind?: PresetKind;
   /** Called with the saved preset's id, so a caller can select what it just created. */
   onSaved?: (id: string) => void;
 }
 
 interface Draft {
   id?: string;
+  kind: PresetKind;
   name: string;
   instruction: string;
   palette: string[];
@@ -25,6 +28,7 @@ const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
 function toDraft(p: StylePreset): Draft {
   return {
     id: p.id,
+    kind: p.kind,
     name: p.name,
     instruction: p.instruction,
     palette: p.palette,
@@ -32,15 +36,17 @@ function toDraft(p: StylePreset): Draft {
   };
 }
 
-const EMPTY: Draft = { name: "", instruction: "", palette: [], reference_images: [] };
+const emptyDraft = (kind: PresetKind): Draft => ({ kind, name: "", instruction: "", palette: [], reference_images: [] });
 
 /**
  * The style library. One place to author a style once — written direction,
  * a colour palette and reference images — and reuse it across every workflow.
  */
-export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
+export function StylePresetsDialog({ open, onOpenChange, kind = "style", onSaved }: Props) {
   const { stylePresets, saveStylePreset, deleteStylePreset } = useWorkflow();
-  const [draft, setDraft] = useState<Draft>(EMPTY);
+  const isSubject = kind === "subject";
+  const presets = stylePresets.filter((p) => p.kind === kind);
+  const [draft, setDraft] = useState<Draft>(emptyDraft(kind));
   const [hexInput, setHexInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -48,8 +54,8 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
 
   // Reset to a blank draft each time the dialog is opened.
   useEffect(() => {
-    if (open) { setDraft(EMPTY); setHexInput(""); }
-  }, [open]);
+    if (open) { setDraft(emptyDraft(kind)); setHexInput(""); }
+  }, [open, kind]);
 
   const patch = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
 
@@ -81,6 +87,7 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
     setSaving(true);
     const saved = await saveStylePreset({
       id: draft.id,
+      kind: draft.kind,
       name: draft.name,
       instruction: draft.instruction,
       palette: draft.palette,
@@ -89,7 +96,7 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
     setSaving(false);
     if (saved) {
       onSaved?.(saved.id);
-      setDraft(EMPTY);
+      setDraft(emptyDraft(kind));
       setHexInput("");
     }
   }, [draft, saving, saveStylePreset, onSaved]);
@@ -101,11 +108,11 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Style presets</DialogTitle>
+          <DialogTitle>{isSubject ? "Subjects" : "Style presets"}</DialogTitle>
           <DialogDescription>
-            Define a style once and reuse it across every workflow. A preset is added to the
-            prompt at generation time, and its reference images are sent to the model ahead of
-            any other inputs.
+            {isSubject
+              ? "Lock a character or product once and keep it identical across every generation. Reference images are the anchor — add one or two good ones and never regenerate them."
+              : "Define a style once and reuse it across every workflow. A preset is added to the prompt at generation time, and its reference images are sent to the model ahead of any other inputs."}
           </DialogDescription>
         </DialogHeader>
 
@@ -114,14 +121,18 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
           <div className="flex flex-col gap-1 overflow-y-auto border-r border-border pr-3">
             <button
               className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-foreground border border-dashed border-border rounded-sm px-2 py-1.5 cursor-pointer transition-colors"
-              onClick={() => { setDraft(EMPTY); setHexInput(""); }}
+              onClick={() => { setDraft(emptyDraft(kind)); setHexInput(""); }}
             >
-              <Plus className="size-3.5" /> New style
+              <Plus className="size-3.5" /> {isSubject ? "New subject" : "New style"}
             </button>
-            {stylePresets.length === 0 && (
-              <p className="text-[11px] text-muted mt-2 leading-relaxed">No styles yet. Create one to lock a look across generations.</p>
+            {presets.length === 0 && (
+              <p className="text-[11px] text-muted mt-2 leading-relaxed">
+                {isSubject
+                  ? "No subjects yet. Create one to keep the same face or product across a whole batch."
+                  : "No styles yet. Create one to lock a look across generations."}
+              </p>
             )}
-            {stylePresets.map((p) => (
+            {presets.map((p) => (
               <div
                 key={p.id}
                 className={`group flex items-center gap-2 rounded-sm px-2 py-1.5 cursor-pointer transition-colors ${draft.id === p.id ? "bg-surface-sunken" : "hover:bg-surface-sunken"}`}
@@ -135,7 +146,7 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
                   onClick={(e) => {
                     e.stopPropagation();
                     deleteStylePreset(p.id);
-                    if (draft.id === p.id) setDraft(EMPTY);
+                    if (draft.id === p.id) setDraft(emptyDraft(kind));
                   }}
                 >
                   <Trash2 className="size-3.5" />
@@ -150,23 +161,25 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
               <label className={labelClass}>Name</label>
               <input
                 className={inputClass}
-                placeholder="e.g. Brand — editorial matte"
+                placeholder={isSubject ? "e.g. Maya — brand spokesperson" : "e.g. Brand — editorial matte"}
                 value={draft.name}
                 onChange={(e) => patch({ name: (e.target as HTMLInputElement).value })}
               />
             </div>
 
             <div className="flex flex-col gap-1">
-              <label className={labelClass}>Style direction</label>
+              <label className={labelClass}>{isSubject ? "Identifying details" : "Style direction"}</label>
               <textarea
                 className={`${inputClass} min-h-[110px] resize-y leading-relaxed`}
-                placeholder="Soft diffused daylight, muted earth tones, 50mm, shallow depth of field, subtle film grain, no text or logos."
+                placeholder={isSubject
+                  ? "Woman in her mid-20s, shoulder-length dark hair, light freckles across the nose, minimal makeup, grey crew-neck sweater. Name one small hard-to-fake detail — it makes drift obvious at a glance."
+                  : "Soft diffused daylight, muted earth tones, 50mm, shallow depth of field, subtle film grain, no text or logos."}
                 value={draft.instruction}
                 onChange={(e) => patch({ instruction: (e.target as HTMLTextAreaElement).value })}
               />
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            <div className={`flex-col gap-1.5 ${isSubject ? "hidden" : "flex"}`}>
               <label className={labelClass}>Palette</label>
               <div className="flex flex-wrap items-center gap-1.5">
                 {draft.palette.map((hex) => (
@@ -229,7 +242,9 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
                 />
               </div>
               <p className="text-[10px] text-muted leading-relaxed">
-                References anchor the look. They are sent only to models that accept reference images; the rest still get the written direction and palette.
+                {isSubject
+                  ? "Generate these once, pick the best, and keep them — re-generating the reference is how a character drifts. Sent only to models that accept reference images."
+                  : "References anchor the look. They are sent only to models that accept reference images; the rest still get the written direction and palette."}
               </p>
             </div>
           </div>
@@ -238,7 +253,7 @@ export function StylePresetsDialog({ open, onOpenChange, onSaved }: Props) {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
           <Button onClick={save} disabled={!draft.name.trim() || saving}>
-            {saving ? "Saving..." : draft.id ? "Save changes" : "Create style"}
+            {saving ? "Saving..." : draft.id ? "Save changes" : isSubject ? "Create subject" : "Create style"}
           </Button>
         </DialogFooter>
       </DialogContent>

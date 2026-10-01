@@ -61,6 +61,7 @@ function ensureSchema(db: D1Database): Promise<void> {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
+      `ALTER TABLE style_presets ADD COLUMN kind TEXT NOT NULL DEFAULT 'style'`,
     ];
     for (const sql of statements) {
       try {
@@ -87,8 +88,11 @@ const WorkflowSchema = z.object({
   updated_at: z.string(),
 });
 
+const PresetKindSchema = z.enum(["style", "subject"]);
+
 const StylePresetSchema = z.object({
   id: z.string(),
+  kind: PresetKindSchema,
   name: z.string(),
   instruction: z.string(),
   palette: z.array(z.string()),
@@ -263,7 +267,7 @@ app.openapi(deleteWorkflow, async (c) => {
 // style instruction, an optional hex palette, and optional reference images.
 // It is stored once and referenced by id from style nodes and Quick Generate;
 // the expansion into prompt + input images happens server-side (see
-// applyStylePreset) so every caller — canvas, quick generate, public API —
+// applyPresets) so every caller — canvas, quick generate, public API —
 // composes it identically.
 
 /** As stored: `palette` and `reference_images` are JSON text columns. */
@@ -287,45 +291,76 @@ function parseStringArray(raw: string | null | undefined): string[] {
 function toStylePreset(row: StylePresetRow): z.infer<typeof StylePresetSchema> {
   return {
     ...row,
+    kind: row.kind === "subject" ? "subject" : "style",
     palette: parseStringArray(row.palette),
     reference_images: parseStringArray(row.reference_images),
   };
 }
 
 /**
- * Expand a preset into the prompt and reference images for one generation.
- * Reference images go first so the model reads them as the style anchor
- * before any per-generation input images.
+ * Load a preset and turn it into one clause of the guide plus its reference images.
+ *
+ * The two kinds pull in opposite directions and must never share a sentence:
+ * a STYLE preset says "look like this, but not of this", while a SUBJECT preset
+ * says "this is the same person/product, keep it identical". Sending the style
+ * wording for a character is why reference images are widely reported not to
+ * hold identity — the instruction tells the model to discard the subject.
  */
-async function applyStylePreset(
+async function loadPresetClause(
   db: D1Database,
   presetId: string | undefined,
+  model: string,
+  callerSuppliedImages: boolean,
+): Promise<{ clause: string; refs: string[] } | null> {
+  if (!presetId) return null;
+  await ensureSchema(db);
+  const preset = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [presetId]);
+  // A deleted preset must not silently abort the generation — run without it.
+  if (!preset) return null;
+
+  const palette = parseStringArray(preset.palette);
+  const refs = parseStringArray(preset.reference_images);
+  const useRefs = refs.length > 0 && acceptsStyleReferences(model, callerSuppliedImages);
+  const isSubject = preset.kind === "subject";
+
+  const parts: string[] = [];
+  if (preset.instruction.trim()) parts.push(preset.instruction.trim());
+  // A palette is a look, never an identity — it is ignored for subjects.
+  if (!isSubject && palette.length) parts.push(`Use this colour palette: ${palette.join(", ")}.`);
+  if (useRefs) {
+    parts.push(isSubject
+      // Phrasing follows the method operators report actually working: name the
+      // sameness explicitly rather than merely attaching a reference.
+      ? "This is the SAME subject as the reference image(s) provided — identical face, hair, build and clothing. Keep every identifying detail unchanged; change only the scene, pose and framing."
+      : "Match the style, palette and treatment of the reference image(s) provided. Do not copy their subject matter.");
+  }
+  if (!parts.length) return null;
+
+  const label = isSubject ? "Subject lock" : "Style guide";
+  return { clause: `${label} "${preset.name}": ${parts.join(" ")}`, refs: useRefs ? refs : [] };
+}
+
+/**
+ * Expand the subject and style presets into one prompt and one image list.
+ * Subject references lead, then style references, then the caller's own images —
+ * identity is the anchor the model should read first.
+ */
+async function applyPresets(
+  db: D1Database,
+  ids: { subjectId?: string; styleId?: string },
   model: string,
   prompt: string,
   inputImages: string[] | undefined,
 ): Promise<{ prompt: string; input_images: string[] | undefined }> {
-  if (!presetId) return { prompt, input_images: inputImages };
-  await ensureSchema(db);
-  const preset = await get<StylePresetRow>("SELECT * FROM style_presets WHERE id = ?", [presetId]);
-  // A deleted preset must not silently abort the generation — run unstyled.
-  if (!preset) return { prompt, input_images: inputImages };
+  const callerSuppliedImages = !!inputImages?.length;
+  const subject = await loadPresetClause(db, ids.subjectId, model, callerSuppliedImages);
+  const style = await loadPresetClause(db, ids.styleId, model, callerSuppliedImages);
+  if (!subject && !style) return { prompt, input_images: inputImages };
 
-  const palette = parseStringArray(preset.palette);
-  const refs = parseStringArray(preset.reference_images);
-
-  const useRefs = refs.length > 0 && acceptsStyleReferences(model, !!inputImages?.length);
-
-  const guide: string[] = [];
-  if (preset.instruction.trim()) guide.push(preset.instruction.trim());
-  if (palette.length) guide.push(`Use this colour palette: ${palette.join(", ")}.`);
-  if (useRefs) guide.push("Match the style, palette and treatment of the reference image(s) provided. Do not copy their subject matter.");
-
-  const styled = guide.length
-    ? `${prompt}\n\nStyle guide "${preset.name}" (apply consistently): ${guide.join(" ")}`
-    : prompt;
-
-  const images = [...(useRefs ? refs : []), ...(inputImages || [])];
-  return { prompt: styled, input_images: images.length ? images : undefined };
+  const clauses = [subject?.clause, style?.clause].filter(Boolean);
+  const composed = `${prompt}\n\n${clauses.join("\n\n")}`;
+  const images = [...(subject?.refs || []), ...(style?.refs || []), ...(inputImages || [])];
+  return { prompt: composed, input_images: images.length ? images : undefined };
 }
 
 const listStylePresets = createRoute({
@@ -348,6 +383,7 @@ const createStylePreset = createRoute({
       content: {
         "application/json": {
           schema: z.object({
+            kind: PresetKindSchema.optional(),
             name: z.string().optional(),
             instruction: z.string().optional(),
             palette: z.array(z.string()).optional(),
@@ -364,11 +400,13 @@ app.openapi(createStylePreset, async (c) => {
   await ensureSchema(c.env.DB);
   const body = c.req.valid("json");
   const id = crypto.randomUUID();
+  const kind = body.kind || "style";
   await run(
-    "INSERT INTO style_presets (id, name, instruction, palette, reference_images) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO style_presets (id, kind, name, instruction, palette, reference_images) VALUES (?, ?, ?, ?, ?, ?)",
     [
       id,
-      body.name?.trim() || "Untitled Style",
+      kind,
+      body.name?.trim() || (kind === "subject" ? "Untitled Subject" : "Untitled Style"),
       body.instruction || "",
       JSON.stringify(body.palette || []),
       JSON.stringify(body.reference_images || []),
@@ -387,6 +425,7 @@ const updateStylePreset = createRoute({
       content: {
         "application/json": {
           schema: z.object({
+            kind: PresetKindSchema.optional(),
             name: z.string().optional(),
             instruction: z.string().optional(),
             palette: z.array(z.string()).optional(),
@@ -409,6 +448,7 @@ app.openapi(updateStylePreset, async (c) => {
 
   const sets: string[] = [];
   const args: unknown[] = [];
+  if (body.kind !== undefined) { sets.push("kind = ?"); args.push(body.kind); }
   if (body.name !== undefined) { sets.push("name = ?"); args.push(body.name.trim() || "Untitled Style"); }
   if (body.instruction !== undefined) { sets.push("instruction = ?"); args.push(body.instruction); }
   if (body.palette !== undefined) { sets.push("palette = ?"); args.push(JSON.stringify(body.palette)); }
@@ -996,6 +1036,7 @@ const generateImage = createRoute({
             quality: z.enum(["auto", "low", "medium", "high"]).optional(),
             input_images: z.array(z.string()).optional(),
             style_preset_id: z.string().optional(),
+            subject_preset_id: z.string().optional(),
           }),
         },
       },
@@ -1020,9 +1061,13 @@ const generateImage = createRoute({
 });
 
 app.openapi(generateImage, async (c) => {
-  const { prompt, model, aspect_ratio, image_size, quality, input_images, style_preset_id } = c.req.valid("json");
+  const { prompt, model, aspect_ratio, image_size, quality, input_images, style_preset_id, subject_preset_id } = c.req.valid("json");
   try {
-    const styled = await applyStylePreset(c.env.DB, style_preset_id, model, prompt, input_images);
+    const styled = await applyPresets(
+      c.env.DB,
+      { subjectId: subject_preset_id, styleId: style_preset_id },
+      model, prompt, input_images,
+    );
     const result = await routeImageGeneration(c.env, {
       model, prompt: styled.prompt, aspect_ratio, image_size, quality, input_images: styled.input_images,
     });
