@@ -4,7 +4,9 @@
 
 [![Deploy with Clawnify](https://app.clawnify.com/deploy-button.svg)](https://app.clawnify.com/deploy?repo=clawnify/OpenStudio)
 
-A visual AI image generation studio with a justified gallery and node-based workflow editor. Built with **Preact + Tailwind CSS + Hono + D1**. Deploys to Cloudflare Workers via [Clawnify](https://clawnify.com).
+**[Try the live demo →](https://app.clawnify.com/demo/workspaces/studio)** — no signup. You get your own sandbox copy with sample data; image generation is disabled in the demo, so nothing you click costs anything.
+
+A visual AI image generation studio with a justified gallery and node-based workflow editor. Built with **React + Tailwind CSS + Hono**. An open-source app template provided by [Clawnify](https://clawnify.com).
 
 ## Features
 
@@ -57,11 +59,11 @@ Append `?agent=true` to the URL for an agent-friendly UI with always-visible del
 
 | Layer | Technology |
 |-------|-----------|
-| **Frontend** | Preact, TypeScript, Tailwind CSS v4, Vite |
-| **Node Editor** | React Flow (@xyflow/react) via Preact compat |
-| **Backend** | Hono (Cloudflare Worker) |
-| **Database** | D1 (SQLite at the edge) |
-| **Storage** | R2 (file uploads) |
+| **Frontend** | React 19, TypeScript, Tailwind CSS v4, Vite |
+| **Node Editor** | React Flow (@xyflow/react) |
+| **Backend** | Hono API |
+| **Database** | SQLite |
+| **Storage** | Object storage (file uploads) |
 | **AI** | OpenRouter API (chat completions + image generation) |
 
 ### Prerequisites
@@ -76,12 +78,12 @@ Append `?agent=true` to the URL for an agent-friendly UI with always-visible del
 schema.sql    — Canonical database schema (workflows, generations)
 src/
   server/
-    index.ts    — Hono API with D1 middleware
-    db.ts       — D1-native database adapter
-    uploads.ts  — R2 file storage adapter
+    index.ts    — Hono API with database middleware
+    db.ts       — SQLite database adapter
+    uploads.ts  — Object storage adapter
   client/
     app.tsx           — Root component with Generate/Workflows tabs
-    context.tsx       — Preact context for workflow state
+    context.tsx       — React context for workflow state
     hooks/use-workflow.ts — Workflow state management + execution engine
     components/
       quick-generate.tsx  — Generation view with justified gallery
@@ -102,9 +104,9 @@ src/
 
 `schema.sql` at the project root is the canonical database schema for fresh deployments. Edit it directly to add tables, columns, or indexes — this is the file maintainers own.
 
-On a fresh deploy, Clawnify applies `schema.sql` to an empty D1 once and records a baseline hash in the deployed instance's tracking table. From then on, the deployed instance evolves via auto-generated migration files (Clawnify's app-builder agent authors them when the user asks for schema changes). Existing deployed instances are not retroactively migrated when this file changes — only new deploys pick up the updated baseline.
+On a fresh deploy, Clawnify applies `schema.sql` to an empty database once and records a baseline hash in the deployed instance's tracking table. From then on, the deployed instance evolves via auto-generated migration files (Clawnify's app-builder agent authors them when the user asks for schema changes). Existing deployed instances are not retroactively migrated when this file changes — only new deploys pick up the updated baseline.
 
-Inside a deployed instance, `schema.sql` becomes an auto-regenerated snapshot of the live D1 — do not hand-edit it there. In this template repo, you do edit it directly.
+Inside a deployed instance, `schema.sql` becomes an auto-regenerated snapshot of the live database — do not hand-edit it there. In this template repo, you do edit it directly.
 
 ### API Endpoints
 
