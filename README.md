@@ -31,7 +31,7 @@ A visual AI image generation studio with a justified gallery and node-based work
 
 ```bash
 git clone https://github.com/clawnify/OpenStudio.git
-cd open-studio
+cd OpenStudio
 pnpm install
 ```
 
