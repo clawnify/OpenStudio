@@ -7,6 +7,7 @@ export interface Features {
   openrouter: boolean;
   openai: boolean;
   fal: boolean;
+  muapi: boolean;
   anthropic: boolean;
   /** Unit generation cost is displayed in — "credits" on Clawnify, "usd" self-hosted. */
   costUnit: CostUnit;

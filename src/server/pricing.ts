@@ -21,7 +21,7 @@ interface OpenRouterModel {
 export interface ImageModel {
   id: string;
   name: string;
-  provider: "openrouter" | "openai" | "fal";
+  provider: "openrouter" | "openai" | "fal" | "muapi";
   /**
    * USD per *output image token* — OpenRouter's `pricing.image_output`.
    *
@@ -32,6 +32,36 @@ export interface ImageModel {
    * basis for comparing them, which is all the picker uses it for.
    */
   imageTokenPrice?: number;
+}
+
+interface MuapiModel {
+  id: string;
+  type?: string;
+}
+
+let muapiCatalogue: Promise<ImageModel[]> | null = null;
+
+/** Live image-model catalogue from MuAPI's OpenAI-compatible models endpoint. */
+export function listMuapiImageModels(apiKey: string): Promise<ImageModel[]> {
+  if (muapiCatalogue) return muapiCatalogue;
+  muapiCatalogue = (async () => {
+    const res = await fetch("https://api.muapi.ai/v1/models?type=image", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) throw new Error(`MuAPI model list failed: ${res.status}`);
+    const body = (await res.json()) as { data?: MuapiModel[] };
+    const models = (body.data || [])
+      .filter((m) => m.id && (m.type === undefined || m.type === "image"))
+      .map((m) => ({
+        id: `muapi/${m.id}`,
+        name: `MuAPI · ${m.id}`,
+        provider: "muapi" as const,
+      }));
+    if (models.length === 0) throw new Error("MuAPI returned no image models");
+    return models;
+  })();
+  muapiCatalogue.catch(() => { muapiCatalogue = null; });
+  return muapiCatalogue.catch(() => []);
 }
 
 /**

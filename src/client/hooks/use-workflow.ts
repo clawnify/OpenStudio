@@ -76,7 +76,7 @@ export function useWorkflowState(): WorkflowContextValue {
   const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>([]);
   const [models, setModels] = useState<ModelOption[]>([]);
   const [stylePresets, setStylePresets] = useState<StylePreset[]>([]);
-  const [features, setFeatures] = useState<Features>({ openrouter: false, openai: false, fal: false, anthropic: false, costUnit: "usd" });
+  const [features, setFeatures] = useState<Features>({ openrouter: false, openai: false, fal: false, muapi: false, anthropic: false, costUnit: "usd" });
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [lastRunResults, setLastRunResults] = useState<LeafResult[]>([]);
   const [executing, setExecuting] = useState(false);

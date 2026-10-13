@@ -1,9 +1,9 @@
 import { createApp, createRoute, z, OpenAPIHono } from "@clawnify/app";
 import { query, get, run } from "./db.js";
 import { initUploads, putUpload, getUpload, deleteUpload, readUploadAsBase64DataUrl } from "./uploads.js";
-import { listOpenRouterImageModels, extractCostUsd, resolveCostUnit } from "./pricing.js";
+import { listOpenRouterImageModels, listMuapiImageModels, extractCostUsd, resolveCostUnit } from "./pricing.js";
 
-type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; ANTHROPIC_API_KEY?: string; CLAWNIFY_TOKEN?: string } };
+type Env = { Bindings: { DB: D1Database; UPLOADS: R2Bucket; OPENROUTER_API_KEY: string; FAL_API_KEY: string; OPENAI_API_KEY?: string; MUAPI_API_KEY?: string; ANTHROPIC_API_KEY?: string; CLAWNIFY_TOKEN?: string } };
 
 const app = createApp<Env>({
   title: "OpenStudio",
@@ -740,6 +740,36 @@ async function generateImageOpenAI(
   return { images: await uploadOpenAIImages(data) };
 }
 
+/** Call MuAPI's OpenAI-compatible text-to-image endpoint and store results in R2. */
+async function generateImageMuapi(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  aspectRatio: string,
+  imageSize: string,
+): Promise<{ images: Array<{ url: string }> }> {
+  const size = openaiSize(aspectRatio, imageSize);
+  const res = await fetchWith5xxRetry("https://api.muapi.ai/v1/images/generations", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model, prompt, size, n: 1, response_format: "url" }),
+  });
+  const rawText = await res.text();
+  if (!res.ok) {
+    throw new Error(`MuAPI error: ${summarizeUpstreamError(res.status, rawText)}`);
+  }
+  let data: { data?: Array<{ b64_json?: string; url?: string }> };
+  try {
+    data = JSON.parse(rawText);
+  } catch {
+    throw new Error(`MuAPI returned non-JSON (status ${res.status}): ${rawText.slice(0, 400)}`);
+  }
+  return { images: await uploadOpenAIImages(data) };
+}
+
 /** Encode a Blob as a base64 data URL for inclusion in OpenAI's JSON `images` array. */
 async function blobToDataUrl(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer();
@@ -971,7 +1001,7 @@ async function generateImageOpenRouter(
  */
 function acceptsStyleReferences(model: string, callerSuppliedImages: boolean): boolean {
   // Text-to-image only — any reference image is a hard error.
-  if (FAL_IMAGE_MODELS.has(model)) return false;
+  if (FAL_IMAGE_MODELS.has(model) || model.startsWith("muapi/")) return false;
   // Safe only when the request is already an edit; otherwise refs would flip it.
   if (OPENAI_DIRECT_MODELS.has(model)) return callerSuppliedImages;
   return true;
@@ -990,6 +1020,21 @@ async function routeImageGeneration(
   opts?: { onRateLimit?: () => void },
 ): Promise<{ images: Array<{ url: string }>; text?: string; costUsd?: number }> {
   const { model, prompt, aspect_ratio, image_size, quality, input_images } = params;
+
+  if (model.startsWith("muapi/")) {
+    if (!env.MUAPI_API_KEY) {
+      throw new Error("MuAPI models require MUAPI_API_KEY to be configured in the app environment.");
+    }
+    if (input_images && input_images.length > 0) {
+      throw new Error("MuAPI's OpenAI-compatible image endpoint currently supports text-to-image only; remove reference images or choose another model.");
+    }
+    const available = await listMuapiImageModels(env.MUAPI_API_KEY);
+    const muapiModel = model.slice("muapi/".length);
+    if (!available.some((candidate) => candidate.id === model)) {
+      throw new Error(`MuAPI image model is unavailable: ${muapiModel}`);
+    }
+    return await generateImageMuapi(env.MUAPI_API_KEY, muapiModel, prompt, aspect_ratio, image_size);
+  }
 
   if (OPENAI_DIRECT_MODELS.has(model)) {
     if (!env.OPENAI_API_KEY) {
@@ -1089,7 +1134,7 @@ const listModels = createRoute({
           schema: z.array(z.object({
             id: z.string(),
             name: z.string(),
-            provider: z.enum(["openrouter", "openai", "fal"]).optional(),
+            provider: z.enum(["openrouter", "openai", "fal", "muapi"]).optional(),
             /** USD per output image *token*, when the upstream publishes a price. */
             imageTokenPrice: z.number().optional(),
           })),
@@ -1107,6 +1152,7 @@ app.get("/api/features", (c) => {
     openrouter: !!c.env.OPENROUTER_API_KEY,
     openai: !!c.env.OPENAI_API_KEY,
     fal: !!c.env.FAL_API_KEY,
+    muapi: !!c.env.MUAPI_API_KEY,
     anthropic: !!c.env.ANTHROPIC_API_KEY,
     // Which unit generation cost is shown in. See resolveCostUnit().
     costUnit: resolveCostUnit(c.env),
@@ -1117,6 +1163,7 @@ app.openapi(listModels, async (c) => {
   const hasOpenRouter = !!c.env.OPENROUTER_API_KEY;
   const hasOpenAI = !!c.env.OPENAI_API_KEY;
   const hasFal = !!c.env.FAL_API_KEY;
+  const hasMuapi = !!c.env.MUAPI_API_KEY;
 
   // Listed live so a withdrawn model disappears from the picker instead of
   // failing at generate time. See pricing.ts for why this is not a static list.
@@ -1134,7 +1181,9 @@ app.openapi(listModels, async (c) => {
     ? Array.from(FAL_IMAGE_MODELS.entries()).map(([id, name]) => ({ id, name, provider: "fal" as const }))
     : [];
 
-  return c.json([...openRouterModels, ...openAiModels, ...falModels], 200);
+  const muapiModels = hasMuapi ? await listMuapiImageModels(c.env.MUAPI_API_KEY!) : [];
+
+  return c.json([...openRouterModels, ...openAiModels, ...falModels, ...muapiModels], 200);
 });
 
 // ── Analyze (vision → text/JSON) ─────────────────────────────────────

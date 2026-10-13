@@ -57,7 +57,7 @@ export interface ModelOption {
   id: string;
   name: string;
   /** Which upstream the request is routed to. Used by the UI to decide which provider-specific options (e.g. OpenAI's `quality`) to show. */
-  provider?: "openrouter" | "openai" | "fal" | "anthropic";
+  provider?: "openrouter" | "openai" | "fal" | "muapi" | "anthropic";
   /** USD per output image *token* (OpenRouter `pricing.image_output`) — comparable across models, not a per-image price. */
   imageTokenPrice?: number;
 }

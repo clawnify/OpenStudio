@@ -121,7 +121,7 @@ export function QuickGenerate() {
   const { models, stylePresets, features } = useWorkflow();
   const { costUnit } = features;
   // No provider key means nothing can generate; say so instead of a dead button.
-  const noProvider = !features.openrouter && !features.openai && !features.fal;
+  const noProvider = !features.openrouter && !features.openai && !features.fal && !features.muapi;
   const [prompt, setPrompt] = useState("");
   // Empty until /api/models resolves — the catalogue is live, so hardcoding a
   // default risks defaulting to a model that has been withdrawn upstream.

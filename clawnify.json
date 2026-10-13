@@ -1,14 +1,14 @@
 {
   "$schema": "https://app.clawnify.com/schema/v1/clawnify.json",
   "name": "OpenStudio",
-  "description": "AI image generation studio with a node-based workflow editor and quick-generate gallery. Supports 10+ models via OpenRouter including Gemini, GPT Image, FLUX, and SeedDream.",
+  "description": "AI image generation studio with a node-based workflow editor and quick-generate gallery. Supports OpenRouter, OpenAI, fal.ai, and MuAPI image models.",
   "app": {
     "framework": "react+hono",
     "database": true,
     "storage": true
   },
   "env": {
-    "required": ["OPENROUTER_API_KEY"],
-    "optional": ["OPENAI_API_KEY", "FAL_API_KEY", "ANTHROPIC_API_KEY"]
+    "required": [],
+    "optional": ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "FAL_API_KEY", "MUAPI_API_KEY", "ANTHROPIC_API_KEY"]
   }
 }

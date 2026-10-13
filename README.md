@@ -18,7 +18,7 @@ A visual AI image generation studio with a justified gallery and node-based work
 - **Auto-naming** — prompt nodes automatically get a descriptive title via Gemini 3.1 Flash Lite on blur
 - **Editable titles** — double-click any node title to rename it
 - **10+ models** — Gemini 3.1 Flash, Gemini 3 Pro, GPT Image 1, FLUX.2 Max, SeedDream 4.5, and more via OpenRouter
-- **Live model list** — every image model OpenRouter currently offers, fetched at request time rather than hardcoded, so a withdrawn model disappears from the picker instead of failing mid-run
+- **Live model lists** — OpenRouter and MuAPI image models are fetched at request time rather than hardcoded, so withdrawn models disappear from the picker instead of failing mid-run
 - **Cost visibility** — each model is tagged `$`–`$$$$` by relative price, and every generation records what the provider actually billed, with per-run and per-workflow totals
 - **Generation history** — all generations persisted with prompt, model, cost, and image
 - **Node version history** — browse every generation a node ever produced across runs, restore any past run's snapshot to the canvas
@@ -35,10 +35,11 @@ cd OpenStudio
 pnpm install
 ```
 
-Create a `.dev.vars` file with your OpenRouter API key:
+Create a `.dev.vars` file with the API keys for the providers you want to use:
 
 ```
 OPENROUTER_API_KEY=your-key-here
+MUAPI_API_KEY=your-key-here
 ```
 
 Start the dev server:
@@ -62,13 +63,16 @@ Append `?agent=true` to the URL for an agent-friendly UI with always-visible del
 | **Backend** | Hono API |
 | **Database** | SQLite |
 | **Storage** | Object storage (file uploads) |
-| **AI** | OpenRouter API (chat completions + image generation) |
+| **AI** | OpenRouter API, OpenAI direct, fal.ai, and MuAPI image generation |
 
 ### Prerequisites
 
 - Node.js 20+
 - pnpm
-- [OpenRouter API key](https://openrouter.ai/keys)
+- At least one image-provider key: OpenRouter, OpenAI, fal.ai, or MuAPI
+- Optional: [OpenRouter](https://openrouter.ai/keys), [OpenAI](https://platform.openai.com/api-keys), [fal.ai](https://fal.ai/dashboard/keys), and [MuAPI](https://muapi.ai) keys
+
+MuAPI's current OpenAI-compatible image endpoint supports text-to-image. Use another configured provider for reference-image editing.
 
 ## Architecture
 
@@ -115,7 +119,7 @@ Inside a deployed instance, `schema.sql` becomes an auto-regenerated snapshot of
 | GET | `/api/workflows/:id` | Get a workflow |
 | PUT | `/api/workflows/:id` | Update a workflow |
 | DELETE | `/api/workflows/:id` | Delete a workflow |
-| POST | `/api/generate` | Generate image via OpenRouter (returns `costUsd`) |
+| POST | `/api/generate` | Generate an image through the selected provider (returns `costUsd` when reported) |
 | GET | `/api/models` | List available image models, with relative price |
 | GET | `/api/generations/:workflowId` | List generations for a workflow |
 | POST | `/api/generations` | Save a generation record |

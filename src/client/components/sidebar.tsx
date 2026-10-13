@@ -24,7 +24,7 @@ const NODE_TYPES: NodeTypeEntry[] = [
 
 export function Sidebar() {
   const { features } = useWorkflow();
-  const imageGenAvailable = features.openrouter || features.openai;
+  const imageGenAvailable = features.openrouter || features.openai || features.fal || features.muapi;
   const visibleNodeTypes = NODE_TYPES.filter((nt) => {
     if (!nt.requires) return true;
     if (nt.requires === "openrouter") return features.openrouter;
