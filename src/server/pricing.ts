@@ -67,16 +67,19 @@ let catalogue: Promise<ImageModel[]> | null = null;
 /**
  * Live image-model catalogue from OpenRouter, price included.
  *
- * The endpoint is public, but the key is sent when present so the response
- * reflects anything account-scoped. Falls back to FALLBACK_MODELS on any
- * failure, and resets the cache so the next isolate retries.
+ * With a key it asks `/api/v1/models/user`, which lists only the models that
+ * key's account can route: a model whose only providers the account has
+ * excluded is left out, so the picker never offers it. `/api/v1/models` lists
+ * every model regardless of the account and is used only without a key. Falls
+ * back to FALLBACK_MODELS on any failure, and resets the cache so the next
+ * isolate retries.
  */
 export function listOpenRouterImageModels(apiKey?: string): Promise<ImageModel[]> {
   if (catalogue) return catalogue;
   catalogue = (async () => {
-    const res = await fetch("https://openrouter.ai/api/v1/models", {
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-    });
+    const res = apiKey
+      ? await fetch("https://openrouter.ai/api/v1/models/user", { headers: { Authorization: `Bearer ${apiKey}` } })
+      : await fetch("https://openrouter.ai/api/v1/models");
     if (!res.ok) throw new Error(`OpenRouter model list failed: ${res.status}`);
     const body = (await res.json()) as { data?: OpenRouterModel[] };
     const models = (body.data || [])

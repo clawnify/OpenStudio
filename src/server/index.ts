@@ -519,6 +519,20 @@ app.get("/api/uploads/:filename", async (c) => {
 // since the live catalogue cannot tell us which models have this constraint.
 const IMAGE_ONLY_MODELS = new Set<string>([]);
 
+// Model ids OpenRouter no longer routes, mapped to the model that took their
+// place. Saved workflows and API callers keep the id they were created with,
+// so the swap happens at call time rather than in the stored data.
+const RENAMED_MODELS = new Map<string, string>([
+  ["google/gemini-3.1-flash-image-preview", "google/gemini-3.1-flash-image"],
+  ["google/gemini-3-pro-image-preview", "google/gemini-3-pro-image"],
+  ["google/gemini-2.5-flash-image-preview", "google/gemini-2.5-flash-image"],
+  ["google/gemini-2.5-flash", "~google/gemini-flash-latest"],
+]);
+
+function currentModelId(model: string): string {
+  return RENAMED_MODELS.get(model) ?? model;
+}
+
 // Explicit allowlist of models that get routed to OpenAI's REST API directly
 // (when OPENAI_API_KEY is set). The `openai/` prefix alone is NOT enough since
 // OpenRouter also uses it (e.g. openai/gpt-5-image lives there).
@@ -989,7 +1003,8 @@ async function routeImageGeneration(
   },
   opts?: { onRateLimit?: () => void },
 ): Promise<{ images: Array<{ url: string }>; text?: string; costUsd?: number }> {
-  const { model, prompt, aspect_ratio, image_size, quality, input_images } = params;
+  const { prompt, aspect_ratio, image_size, quality, input_images } = params;
+  const model = currentModelId(params.model);
 
   if (OPENAI_DIRECT_MODELS.has(model)) {
     if (!env.OPENAI_API_KEY) {
@@ -1030,7 +1045,7 @@ const generateImage = createRoute({
         "application/json": {
           schema: z.object({
             prompt: z.string(),
-            model: z.string().default("google/gemini-3.1-flash-image-preview"),
+            model: z.string().default("google/gemini-3.1-flash-image"),
             aspect_ratio: z.string().default("1:1"),
             image_size: z.string().default("1K"),
             quality: z.enum(["auto", "low", "medium", "high"]).optional(),
@@ -1410,7 +1425,8 @@ async function routeAnalyze(
   params: { prompt: string; model: string; inputImages: string[]; outputFormat: "json" | "text" },
   opts?: { onRateLimit?: () => void },
 ): Promise<{ result: string }> {
-  const { prompt, model, inputImages, outputFormat } = params;
+  const { prompt, inputImages, outputFormat } = params;
+  const model = currentModelId(params.model);
   if (model.startsWith("claude")) {
     if (!env.ANTHROPIC_API_KEY) {
       throw new Error(`Model ${model} requires ANTHROPIC_API_KEY to be configured. Set it in the Clawnify dashboard, or pick a different model.`);
@@ -1737,7 +1753,7 @@ app.post("/api/suggest-name", async (c) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3.1-flash-lite-preview",
+        model: "google/gemini-3.1-flash-lite",
         messages: [
           { role: "system", content: `You extract a short 1-2 word title from text, using the broadest general category. Examples: "dog" → "Animal", "rose" → "Flower", "Ferrari" → "Car", "Paris at night" → "Location", "Tokyo street" → "Location", "a red sports car on a mountain" → "Vehicle", "sunset over ocean" → "Landscape". Always prefer the broadest category (Animal, Vehicle, Location, Landscape, Person, Food, Object, Building). If the text has no subject at all, return {"name":""}. Do NOT duplicate any of these existing labels: [${(existingLabels || []).join(", ")}]. Respond with JSON {"name":"..."} only.` },
           { role: "user", content: text.slice(0, 500) },
@@ -1808,7 +1824,7 @@ app.post("/api/refine-prompt", async (c) => {
           "X-Title": "Clawnify",
         },
         body: JSON.stringify({
-          model: "google/gemini-3.1-flash-lite-preview",
+          model: "google/gemini-3.1-flash-lite",
           messages: [
             { role: "system", content: REFINE_SYSTEM },
             { role: "user", content: userMsg },
@@ -1819,7 +1835,7 @@ app.post("/api/refine-prompt", async (c) => {
       if (response.ok) {
         const data = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
         const prompt = data.choices?.[0]?.message?.content?.trim() || "";
-        if (prompt) return c.json({ prompt, model: "google/gemini-3.1-flash-lite-preview" }, 200);
+        if (prompt) return c.json({ prompt, model: "google/gemini-3.1-flash-lite" }, 200);
       }
     }
 
@@ -2028,7 +2044,7 @@ publicApp.openapi(executeWorkflow, async (c) => {
       }
       case "generateImage": {
         const prompt = inputText || inputPromptText || "A beautiful image";
-        const model = (node.data.model as string) || "google/gemini-3.1-flash-image-preview";
+        const model = (node.data.model as string) || "google/gemini-3.1-flash-image";
         const aspectRatio = (node.data.aspectRatio as string) || "1:1";
         const imageSize = (node.data.imageSize as string) || "1K";
 
