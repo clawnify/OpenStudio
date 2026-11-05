@@ -353,7 +353,7 @@ export function useWorkflowState(): WorkflowContextValue {
           break;
         }
         case "generateImage":
-          data = { label: "Generate Image", model: "google/gemini-3.1-flash-image-preview", aspectRatio: "1:1", imageSize: "1K", status: "idle" };
+          data = { label: "Generate Image", model: "google/gemini-3.1-flash-image", aspectRatio: "1:1", imageSize: "1K", status: "idle" };
           break;
         case "imageInput":
           data = { label: "Image Input", imageUrl: "" };
@@ -373,7 +373,7 @@ export function useWorkflowState(): WorkflowContextValue {
             tilePrompts: ["", "", "", ""],
             tileEnabled: [true, true, true, true],
             grid: { rows: 2, cols: 2 },
-            model: "google/gemini-3.1-flash-image-preview",
+            model: "google/gemini-3.1-flash-image",
             tileImageSize: "1K",
             status: "idle",
           };
@@ -519,7 +519,7 @@ export function useWorkflowState(): WorkflowContextValue {
             const prompt = feedback
               ? `${basePrompt}\n\nAdditional feedback (apply these changes): ${feedback}`
               : basePrompt;
-            const model = (data.model as string) || "google/gemini-3.1-flash-image-preview";
+            const model = (data.model as string) || "google/gemini-3.1-flash-image";
             const aspectRatio = (data.aspectRatio as string) || "1:1";
             const imageSize = (data.imageSize as string) || "1K";
             const quality = data.quality as string | undefined;
@@ -607,7 +607,7 @@ export function useWorkflowState(): WorkflowContextValue {
               return (refData.text as string) || (refData.result as string) || "";
             });
             const analyzePrompt = resolvedAnalyzePrompt || inputText || inputPromptText || "Describe this image.";
-            const analyzeModel = (data.model as string) || "google/gemini-2.5-flash";
+            const analyzeModel = (data.model as string) || "~google/gemini-flash-latest";
             const outputFormat = ((data.outputFormat as string) === "json" ? "json" : "text") as "json" | "text";
             if (inputImages.length === 0) {
               updateNodeData(nodeId, { status: "error", error: "No input image" });
@@ -639,7 +639,7 @@ export function useWorkflowState(): WorkflowContextValue {
             while (tilePrompts.length < tileCount) tilePrompts.push("");
             const tileEnabled = ((data.tileEnabled as boolean[]) || []).slice(0, tileCount);
             while (tileEnabled.length < tileCount) tileEnabled.push(true);
-            const refineModel = (data.model as string) || "google/gemini-3.1-flash-image-preview";
+            const refineModel = (data.model as string) || "google/gemini-3.1-flash-image";
 
             // Source handle ("source"): the GenerateImage node whose output we split into tiles.
             // Context handle ("context"): any other node — text gets prepended, images become extra references.
