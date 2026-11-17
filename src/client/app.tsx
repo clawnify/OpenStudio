@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { AppNav, embedded, reportLocation } from "@clawnify/app/client";
+import { AppNav, reportLocation } from "@clawnify/app/client";
 import { WorkflowContext, useWorkflow } from "./context";
 import { useWorkflowState } from "./hooks/use-workflow";
 import { WorkflowEditor } from "./components/workflow-editor";
@@ -26,8 +26,9 @@ function TopNav() {
 /**
  * Inside the Clawnify dashboard the app's pages live in the dashboard sidebar,
  * and the open screen is kept in the host URL so a reload returns to it.
+ * Anywhere else the same <AppNav> draws the studio's own top tabs.
  */
-function HostNav() {
+function Nav() {
   const { workflows } = useWorkflow();
   const location = useLocation();
   const navigate = useNavigate();
@@ -54,6 +55,7 @@ function HostNav() {
         },
       ]}
       onNavigate={(item) => item.href && navigate(item.href)}
+      standalone={() => <TopNav />}
     />
   );
 }
@@ -74,7 +76,7 @@ export function App() {
       <ReactFlowProvider>
         <BrowserRouter>
           <div className="flex flex-col h-full w-full">
-            {embedded ? <HostNav /> : <TopNav />}
+            <Nav />
             <div className="flex-1 min-h-0 flex flex-col">
               <Routes>
                 <Route path="/" element={<Navigate to="/generate" replace />} />
