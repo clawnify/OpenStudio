@@ -100,7 +100,7 @@ export function AnalyzeNode({ id, data }: Props) {
       <Handle type="source" position={Position.Right} className="!bg-ring" />
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{data.label || "Analyze"}</DialogTitle>
             <DialogDescription>

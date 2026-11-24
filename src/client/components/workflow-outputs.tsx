@@ -118,9 +118,9 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                     className="w-full h-full object-cover"
                   />
                 </button>
-                <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
                   <button
-                    className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                    className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                     onClick={(e) => { e.stopPropagation(); if (gen.image_url) downloadImage(gen.image_url, `${gen.node_id}-${gen.id}.png`); }}
                     title="Download image"
                   >
@@ -129,14 +129,14 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                   {gen.run_id && (
                     <>
                       <button
-                        className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                        className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                         onClick={(e) => { e.stopPropagation(); loadIntoCanvas(gen.run_id!); }}
                         title="Load the workflow state from this run into the canvas"
                       >
                         <RotateCcw size={12} />
                       </button>
                       <button
-                        className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                        className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                         onClick={(e) => { e.stopPropagation(); setFeedbackTarget(gen); }}
                         title="Iterate on this output by adding prompt feedback and re-running"
                       >
@@ -145,7 +145,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                     </>
                   )}
                   <button
-                    className={`inline-flex items-center justify-center text-white border-none rounded-sm p-1 cursor-pointer transition-colors ${
+                    className={`inline-flex items-center justify-center text-white border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer transition-colors ${
                       compareIds.includes(gen.id) ? "bg-link hover:bg-link" : "bg-black/60 hover:bg-black/80"
                     }`}
                     onClick={(e) => { e.stopPropagation(); toggleCompare(gen.id); }}
@@ -155,7 +155,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                   </button>
                   {gen.node_id && (
                     <button
-                      className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                      className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                       onClick={(e) => { e.stopPropagation(); setHistoryTarget(gen); }}
                       title="Version history of this node"
                     >
@@ -163,7 +163,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                     </button>
                   )}
                   <button
-                    className="inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 cursor-pointer"
+                    className="inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                     onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(gen.id); }}
                     title="Delete this output"
                   >
@@ -178,7 +178,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
                   {gen.error && <div className="text-[10px] text-faint">{gen.error.slice(0, 80)}</div>}
                 </div>
                 <button
-                  className="absolute top-1.5 right-1.5 inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-1.5 right-1.5 inline-flex items-center justify-center text-white bg-danger hover:bg-danger-hover border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity"
                   onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(gen.id); }}
                   title="Delete this entry"
                 >
@@ -232,7 +232,7 @@ export function WorkflowOutputs({ onLoaded }: Props = {}) {
 
       {comparePair.length === 2 && (
         <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[900] inline-flex items-center gap-2 text-xs text-white bg-black/80 rounded-full px-2 py-1.5 shadow-md"
+          className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 w-max z-[900] inline-flex items-center gap-2 text-xs text-white bg-black/80 rounded-full px-2 py-1.5 shadow-md"
           onClick={(e) => e.stopPropagation()}
         >
           <span className="pl-2 text-white/80">2 picked for compare</span>

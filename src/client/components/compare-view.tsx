@@ -28,7 +28,7 @@ export function CompareView({ left, right, onRestore, onClose }: Props) {
         </button>
         <span className="text-[11px] text-white/70">Comparing two generations</span>
       </div>
-      <div className="flex-1 min-h-0 grid grid-cols-2 gap-px bg-black/40 p-1" onClick={(e) => e.stopPropagation()}>
+      <div className="flex-1 min-h-0 grid grid-rows-2 sm:grid-rows-1 sm:grid-cols-2 gap-px bg-black/40 p-1" onClick={(e) => e.stopPropagation()}>
         <ComparePane gen={left} label="A" onRestore={onRestore} />
         <ComparePane gen={right} label="B" onRestore={onRestore} />
       </div>
@@ -47,7 +47,7 @@ function ComparePane({ gen, label, onRestore }: { gen: Generation; label: string
           <div className="text-white/60 text-xs">No image ({gen.status})</div>
         )}
       </div>
-      <div className="p-3 shrink-0 border-t border-border">
+      <div className="p-2 sm:p-3 shrink-0 border-t border-border">
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className="text-[10px] font-semibold text-faint uppercase tracking-wide">{label}</span>
           <div className="flex gap-1.5">

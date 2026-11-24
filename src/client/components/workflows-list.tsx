@@ -52,7 +52,7 @@ export function WorkflowsList() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-background">
-      <div className="max-w-[1200px] mx-auto w-full px-6 py-6">
+      <div className="max-w-[1200px] mx-auto w-full px-4 py-4 sm:px-6 sm:py-6">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-bold tracking-tight text-foreground">Workflows</h1>
           <button
@@ -126,16 +126,16 @@ export function WorkflowsList() {
                       <td className="px-4 py-2.5 text-right text-[13px] tabular-nums text-muted">{nodeCount(wf)}</td>
                       <td className="px-4 py-2.5 text-[13px] text-muted">{relativeTime(wf.updated_at)}</td>
                       <td className="px-4 py-2.5">
-                        <div className="node-hover-action flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="node-hover-action flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
                           <button
-                            className="p-1 rounded-sm text-faint hover:text-foreground hover:bg-surface cursor-pointer transition-colors"
+                            className="p-1 pointer-coarse:p-2 rounded-sm text-faint hover:text-foreground hover:bg-surface cursor-pointer transition-colors"
                             title="Duplicate"
                             onClick={(e) => { e.stopPropagation(); duplicateWorkflow(wf.id); }}
                           >
                             <Copy className="size-3.5" />
                           </button>
                           <button
-                            className="p-1 rounded-sm text-faint hover:text-danger hover:bg-danger-tint cursor-pointer transition-colors"
+                            className="p-1 pointer-coarse:p-2 rounded-sm text-faint hover:text-danger hover:bg-danger-tint cursor-pointer transition-colors"
                             title="Delete"
                             onClick={(e) => { e.stopPropagation(); deleteWorkflow(wf.id); }}
                           >

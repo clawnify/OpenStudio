@@ -2,7 +2,7 @@ import { type DragEvent } from "react";
 import { Pencil, Wand2, Camera, Palette, UserRound, Search, LayoutGrid, Scaling, type LucideIcon } from "lucide-react";
 import { useWorkflow } from "../context";
 
-interface NodeTypeEntry {
+export interface NodeTypeEntry {
   type: string;
   icon: LucideIcon;
   label: string;
@@ -22,21 +22,27 @@ const NODE_TYPES: NodeTypeEntry[] = [
   { type: "upscale", icon: Scaling, label: "Upscale", desc: "fal.ai SeedVR image upscaler", requires: "fal" },
 ];
 
-export function Sidebar() {
+/** The node types this instance can run, given which provider keys it has. */
+export function useNodeTypes(): NodeTypeEntry[] {
   const { features } = useWorkflow();
   const imageGenAvailable = features.openrouter || features.openai;
-  const visibleNodeTypes = NODE_TYPES.filter((nt) => {
+  return NODE_TYPES.filter((nt) => {
     if (!nt.requires) return true;
     if (nt.requires === "openrouter") return features.openrouter;
     if (nt.requires === "fal") return features.fal;
     if (nt.requires === "imageGen") return imageGenAvailable;
     return true;
   });
+}
+
+/** Drag palette. Phones get the canvas's "Node" menu instead (workflow-canvas.tsx). */
+export function Sidebar() {
+  const visibleNodeTypes = useNodeTypes();
 
   const onDragStart = (e: DragEvent, type: string) => { e.dataTransfer?.setData("application/reactflow", type); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; };
 
   return (
-    <aside className="w-[260px] bg-surface border-r border-border flex flex-col shrink-0">
+    <aside className="hidden md:flex w-[260px] bg-surface border-r border-border flex-col shrink-0">
       <div className="px-4 py-3 border-b border-border">
         <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Nodes</span>
       </div>

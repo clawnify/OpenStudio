@@ -145,7 +145,7 @@ export function PromptNode({ id, data, selected }: Props) {
       <Handle type="source" position={Position.Right} className="!bg-ring" />
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{data.label || "Prompt"}</DialogTitle>
             <DialogDescription>
