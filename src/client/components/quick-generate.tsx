@@ -5,11 +5,16 @@ import { api } from "../api";
 import { formatCost, relativePrice } from "../cost";
 import type { Generation } from "../types";
 import { StylePresetsDialog } from "./style-presets-dialog";
+import { ImageLightbox } from "./image-lightbox";
 
 const ASPECT_RATIOS = ["1:1", "3:2", "2:3", "16:9", "9:16", "4:3", "3:4", "4:5", "5:4", "21:9"];
 const IMAGE_SIZES = ["0.5K", "1K", "2K", "4K"];
-const ITEMS_PER_ROW = 4;
 const GAP = 2;
+
+/** Two images a row on a phone, four from a small tablet up. */
+function itemsPerRow(containerWidth: number): number {
+  return containerWidth < 640 ? 2 : 4;
+}
 
 function parseAspectRatio(ar: string): number {
   const [w, h] = ar.split(":").map(Number);
@@ -22,18 +27,19 @@ interface RowItem {
   ratio: number;
 }
 
-function buildRows(items: RowItem[]): RowItem[][] {
+function buildRows(items: RowItem[], perRow: number): RowItem[][] {
   const rows: RowItem[][] = [];
-  for (let i = 0; i < items.length; i += ITEMS_PER_ROW) {
-    rows.push(items.slice(i, i + ITEMS_PER_ROW));
+  for (let i = 0; i < items.length; i += perRow) {
+    rows.push(items.slice(i, i + perRow));
   }
   return rows;
 }
 
-function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSource }: {
+function JustifiedRow({ items, containerWidth, perRow, onSelect, onDragStart, onUseAsSource }: {
   items: RowItem[];
   containerWidth: number;
-  onSelect: (url: string) => void;
+  perRow: number;
+  onSelect: (gen: Generation) => void;
   onDragStart: (e: DragEvent, url: string) => void;
   onUseAsSource: (url: string) => void;
 }) {
@@ -42,7 +48,7 @@ function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSou
   const usableWidth = containerWidth - totalGap;
   const totalRatio = items.reduce((sum, it) => sum + it.ratio, 0);
   // Cap height so incomplete rows don't blow up
-  const maxHeight = (containerWidth - GAP * (ITEMS_PER_ROW - 1)) / (ITEMS_PER_ROW * 1); // assume 1:1 as baseline
+  const maxHeight = (containerWidth - GAP * (perRow - 1)) / (perRow * 1); // assume 1:1 as baseline
   const rowHeight = Math.min(usableWidth / totalRatio, maxHeight);
 
   return (
@@ -70,7 +76,7 @@ function JustifiedRow({ items, containerWidth, onSelect, onDragStart, onUseAsSou
               gen.status === "error" ? "ring-1 ring-danger" : ""
             }`}
             style={{ width: `${width}px`, height: `${rowHeight}px` }}
-            onClick={() => gen.image_url && onSelect(gen.image_url)}
+            onClick={() => gen.image_url && onSelect(gen)}
             draggable={!!gen.image_url}
             onDragStart={(e: DragEvent) => gen.image_url && onDragStart(e, gen.image_url)}
           >
@@ -134,7 +140,8 @@ export function QuickGenerate() {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // Opens in the lightbox, which also carries this card's hover actions for touch screens.
+  const [selected, setSelected] = useState<Generation | null>(null);
   const [barDragOver, setBarDragOver] = useState(false);
   const [stylePresetId, setStylePresetId] = useState("");
   const [managingStyles, setManagingStyles] = useState(false);
@@ -283,6 +290,7 @@ export function QuickGenerate() {
 
   // Build justified rows
   const pendingRatio = parseAspectRatio(aspectRatio);
+  const perRow = itemsPerRow(containerWidth);
   const rows = useMemo(() => {
     const items: RowItem[] = [];
     // Pending loaders first
@@ -295,8 +303,8 @@ export function QuickGenerate() {
       if (ratio === 0) continue; // still loading dimensions, skip
       items.push({ gen, ratio });
     }
-    return buildRows(items);
-  }, [pendingCount, pendingRatio, generations, imageDims]);
+    return buildRows(items, perRow);
+  }, [pendingCount, pendingRatio, generations, imageDims, perRow]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 relative bg-background">
@@ -314,7 +322,8 @@ export function QuickGenerate() {
                 key={i}
                 items={row}
                 containerWidth={containerWidth}
-                onSelect={setSelectedImage}
+                perRow={perRow}
+                onSelect={setSelected}
                 onDragStart={handleDragStart}
                 onUseAsSource={addImageAsAttachment}
               />
@@ -332,29 +341,30 @@ export function QuickGenerate() {
       )}
 
       {noProvider && (
-        <div role="status" className="shrink-0 mx-auto mb-2 w-full max-w-3xl rounded-md border border-border bg-surface-sunken px-4 py-2.5 text-xs text-muted">
+        <div role="status" className="shrink-0 mx-2 sm:mx-auto mb-2 sm:w-full max-w-3xl rounded-md border border-border bg-surface-sunken px-4 py-2.5 text-xs text-muted">
           No image model is connected. Add an OpenRouter, OpenAI or fal.ai API key to this app to generate images.
         </div>
       )}
 
       {/* Bottom bar */}
       <div
-        className={`shrink-0 mx-auto mb-4 w-full max-w-3xl rounded-lg border-2 bg-surface shadow-md transition-colors ${
+        className={`shrink-0 mx-2 mb-2 sm:mx-auto sm:mb-4 sm:w-full max-w-3xl rounded-lg border-2 bg-surface shadow-md transition-colors ${
           barDragOver ? "border-ring bg-surface-sunken" : "border-border"
         }`}
         onDragOver={(e) => { e.preventDefault(); setBarDragOver(true); }}
         onDragLeave={() => setBarDragOver(false)}
         onDrop={onBarDrop}
       >
-        <div className="p-4 pb-3">
+        <div className="p-3 sm:p-4 pb-3">
           {attachments.length > 0 && (
             <div className="flex gap-2 mb-3">
               {attachments.map((url, i) => (
                 <div key={i} className="relative w-12 h-12 rounded-sm overflow-hidden border border-border group/att">
                   <img className="w-full h-full object-cover" src={url} alt="attachment" />
                   <button
-                    className="absolute inset-0 bg-black/40 text-white border-none text-sm cursor-pointer opacity-0 group-hover/att:opacity-100 transition-opacity flex items-center justify-center"
+                    className="absolute inset-0 bg-black/40 pointer-coarse:bg-black/25 text-white border-none text-sm cursor-pointer opacity-0 group-hover/att:opacity-100 pointer-coarse:opacity-100 transition-opacity flex items-center justify-center"
                     onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                    aria-label="Remove source"
                   >
                     &times;
                   </button>
@@ -378,23 +388,24 @@ export function QuickGenerate() {
             rows={1}
           />
         </div>
-        <div className="flex items-center justify-between px-4 pb-3 pt-0">
-          <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center justify-between gap-2 px-3 sm:px-4 pb-3 pt-0">
+          {/* Phones: one row of controls that scrolls sideways, instead of wrapping into four. */}
+          <div className="flex items-center gap-2 min-w-0 flex-nowrap overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden max-sm:pr-6 max-sm:[mask-image:linear-gradient(to_right,#000_calc(100%-24px),transparent)] sm:flex-wrap sm:overflow-visible">
             {models.length > 0 && (
-            <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken max-w-[260px]" value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)}>
+            <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken max-w-[9rem] sm:max-w-[260px] shrink-0" value={model} onChange={(e) => setModel((e.target as HTMLSelectElement).value)}>
               {models.map((m) => {
                 const price = relativePrice(m.imageTokenPrice, tokenPrices);
                 return <option key={m.id} value={m.id}>{price ? `${m.name} · ${price}` : m.name}</option>;
               })}
             </select>
             )}
-            <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken" value={aspectRatio} onChange={(e) => setAspectRatio((e.target as HTMLSelectElement).value)}>
+            <select className="h-8 shrink-0 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken" value={aspectRatio} onChange={(e) => setAspectRatio((e.target as HTMLSelectElement).value)}>
               {ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-            <select className="h-8 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken" value={imageSize} onChange={(e) => setImageSize((e.target as HTMLSelectElement).value)}>
+            <select className="h-8 shrink-0 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium px-3 cursor-pointer outline-none appearance-none transition-all hover:bg-surface-sunken" value={imageSize} onChange={(e) => setImageSize((e.target as HTMLSelectElement).value)}>
               {IMAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <div className="flex items-center h-8 bg-surface-sunken border border-border rounded-full pl-2.5 pr-1 gap-1">
+            <div className="flex items-center h-8 shrink-0 bg-surface-sunken border border-border rounded-full pl-2.5 pr-1 gap-1">
               <UserRound className={`size-3.5 shrink-0 ${subjectPresetId ? "text-primary" : "text-muted"}`} />
               <select
                 className="h-full max-w-[10rem] bg-transparent border-none text-muted text-xs font-medium pr-1 cursor-pointer outline-none appearance-none"
@@ -411,7 +422,7 @@ export function QuickGenerate() {
                 <option value="__manage">Manage subjects...</option>
               </select>
             </div>
-            <div className="flex items-center h-8 bg-surface-sunken border border-border rounded-full pl-2.5 pr-1 gap-1">
+            <div className="flex items-center h-8 shrink-0 bg-surface-sunken border border-border rounded-full pl-2.5 pr-1 gap-1">
               <Palette className={`size-3.5 shrink-0 ${stylePresetId ? "text-primary" : "text-muted"}`} />
               <select
                 className="h-full max-w-[10rem] bg-transparent border-none text-muted text-xs font-medium pr-1 cursor-pointer outline-none appearance-none"
@@ -428,17 +439,17 @@ export function QuickGenerate() {
                 <option value="__manage">Manage styles...</option>
               </select>
             </div>
-            <div className="flex items-center h-8 border border-border rounded-full overflow-hidden">
+            <div className="flex items-center h-8 shrink-0 border border-border rounded-full overflow-hidden">
               <button className="w-7 h-full bg-surface-sunken border-none text-muted text-sm cursor-pointer flex items-center justify-center transition-colors hover:bg-surface-sunken" onClick={() => setImageCount(Math.max(1, imageCount - 1))}>-</button>
               <span className="w-7 text-center text-xs font-semibold text-muted">{imageCount}</span>
               <button className="w-7 h-full bg-surface-sunken border-none text-muted text-sm cursor-pointer flex items-center justify-center transition-colors hover:bg-surface-sunken" onClick={() => setImageCount(Math.min(8, imageCount + 1))}>+</button>
             </div>
             {attachments.length === 0 && (
-              <button className="h-8 px-3 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium cursor-pointer flex items-center gap-1.5 transition-all hover:bg-surface-sunken" onClick={() => fileRef.current?.click()}>+ Source</button>
+              <button className="h-8 shrink-0 whitespace-nowrap px-3 bg-surface-sunken border border-border rounded-full text-muted text-xs font-medium cursor-pointer flex items-center gap-1.5 transition-all hover:bg-surface-sunken" onClick={() => fileRef.current?.click()}>+ Source</button>
             )}
           </div>
           <button
-            className="h-10 px-6 rounded-sm bg-primary text-on-primary text-sm font-semibold border-none cursor-pointer shrink-0 flex items-center gap-1.5 transition-all hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+            className="h-10 px-4 sm:px-6 rounded-sm bg-primary text-on-primary text-sm font-semibold border-none cursor-pointer shrink-0 flex items-center gap-1.5 transition-all hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
             onClick={generate}
             disabled={generating || !prompt.trim() || noProvider}
           >
@@ -452,11 +463,13 @@ export function QuickGenerate() {
       <StylePresetsDialog open={managingStyles} onOpenChange={setManagingStyles} kind="style" onSaved={setStylePresetId} />
       <StylePresetsDialog open={managingSubjects} onOpenChange={setManagingSubjects} kind="subject" onSaved={setSubjectPresetId} />
 
-      {selectedImage && (
-        <div className="fixed inset-0 z-[1000] bg-black/70 flex items-center justify-center cursor-pointer" onClick={() => setSelectedImage(null)}>
-          <img className="max-w-[90vw] max-h-[90vh] object-contain cursor-default shadow-md" src={selectedImage} alt="Full size" onClick={(e) => e.stopPropagation()} />
-        </div>
-      )}
+      <ImageLightbox
+        src={selected?.image_url || null}
+        filename={selected ? `quick-${selected.id}.png` : undefined}
+        prompt={selected?.prompt}
+        onUseAsSource={selected?.image_url ? () => { addImageAsAttachment(selected.image_url!); setSelected(null); } : undefined}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

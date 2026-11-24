@@ -106,7 +106,7 @@ export function StylePresetsDialog({ open, onOpenChange, kind = "style", onSaved
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-3xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isSubject ? "Subjects" : "Style presets"}</DialogTitle>
           <DialogDescription>
@@ -116,9 +116,9 @@ export function StylePresetsDialog({ open, onOpenChange, kind = "style", onSaved
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-[220px_1fr] gap-4 max-h-[60vh]">
+        <div className="grid grid-cols-1 sm:grid-cols-[220px_1fr] gap-4 sm:max-h-[60vh]">
           {/* Saved presets */}
-          <div className="flex flex-col gap-1 overflow-y-auto border-r border-border pr-3">
+          <div className="flex flex-col gap-1 overflow-y-auto border-b pb-3 sm:border-b-0 sm:pb-0 sm:border-r border-border sm:pr-3">
             <button
               className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-foreground border border-dashed border-border rounded-sm px-2 py-1.5 cursor-pointer transition-colors"
               onClick={() => { setDraft(emptyDraft(kind)); setHexInput(""); }}
@@ -141,7 +141,7 @@ export function StylePresetsDialog({ open, onOpenChange, kind = "style", onSaved
                 <Palette className="size-3.5 text-muted shrink-0" />
                 <span className="text-xs text-foreground truncate flex-1">{p.name}</span>
                 <button
-                  className="opacity-0 group-hover:opacity-100 text-muted hover:text-foreground cursor-pointer transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 text-muted hover:text-foreground cursor-pointer transition-opacity"
                   title={`Delete ${p.name}`}
                   onClick={(e) => {
                     e.stopPropagation();

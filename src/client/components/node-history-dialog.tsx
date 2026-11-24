@@ -31,9 +31,9 @@ export function NodeHistoryDialog({ generations, target, onRestore, onCompare, o
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[1000] bg-black/80 flex items-center justify-center p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-[1000] bg-black/80 flex items-center justify-center p-4 sm:p-6" onClick={onClose}>
       <div
-        className="bg-surface border border-border rounded-md w-full max-w-3xl max-h-[85vh] flex flex-col shadow-md"
+        className="bg-surface border border-border rounded-md w-full max-w-3xl max-h-[85dvh] flex flex-col shadow-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -57,7 +57,7 @@ export function NodeHistoryDialog({ generations, target, onRestore, onCompare, o
               Only one generation for this node so far. Re-run it (or use feedback iterate) to build history.
             </div>
           ) : (
-            <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+            <div className="grid gap-3 grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
               {versions.map((gen, i) => (
                 <div key={gen.id} className="relative bg-surface-sunken border border-border rounded-sm overflow-hidden group">
                   {gen.image_url ? (
@@ -66,10 +66,10 @@ export function NodeHistoryDialog({ generations, target, onRestore, onCompare, o
                       {gen.run_id === current && (
                         <span className="absolute top-1.5 left-1.5 text-[9px] text-white bg-black/70 rounded-sm px-1.5 py-0.5">in canvas</span>
                       )}
-                      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
                         {gen.run_id && (
                           <button
-                            className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                            className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                             onClick={() => onRestore(gen.run_id!)}
                             title="Load the workflow state from this run into the canvas"
                           >
@@ -77,14 +77,14 @@ export function NodeHistoryDialog({ generations, target, onRestore, onCompare, o
                           </button>
                         )}
                         <button
-                          className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                          className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                           onClick={() => onCompare(gen)}
                           title="Pick this version for side-by-side compare"
                         >
                           <Columns2 size={12} />
                         </button>
                         <button
-                          className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 cursor-pointer"
+                          className="inline-flex items-center justify-center text-white bg-black/60 hover:bg-black/80 border-none rounded-sm p-1 pointer-coarse:size-8 cursor-pointer"
                           onClick={() => downloadImage(gen.image_url!, `${gen.node_id}-${gen.id}.png`)}
                           title="Download image"
                         >

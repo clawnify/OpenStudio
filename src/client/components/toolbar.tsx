@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play } from "lucide-react";
+import { Play, Workflow, Images, Save, History } from "lucide-react";
 import { useWorkflow } from "../context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -13,35 +13,38 @@ export function Toolbar({ workflowView, onWorkflowViewChange }: Props) {
   const [showResults, setShowResults] = useState(false);
 
   const tabClass = (active: boolean) =>
-    `px-3 py-1.5 text-xs font-semibold cursor-pointer transition-all ${
+    `inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 text-xs font-semibold cursor-pointer transition-all ${
       active ? "bg-surface-sunken text-foreground" : "bg-transparent text-muted hover:text-foreground"
     }`;
 
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-border shrink-0">
-      <div className="flex items-center gap-3">
+    <div className="flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-surface border-b border-border shrink-0">
+      <div className="flex items-center gap-3 min-w-0">
         {activeWorkflow && (
-          <span className="text-sm font-semibold text-foreground">{activeWorkflow.name}</span>
+          <span className="text-sm font-semibold text-foreground truncate" title={activeWorkflow.name}>{activeWorkflow.name}</span>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      {/* Phones keep one row: secondary controls drop their labels, Execute keeps its own. */}
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <div className="inline-flex border border-border rounded-sm overflow-hidden">
-          <button className={tabClass(workflowView === "canvas")} onClick={() => onWorkflowViewChange("canvas")}>
-            Canvas
+          <button className={tabClass(workflowView === "canvas")} onClick={() => onWorkflowViewChange("canvas")} aria-label="Canvas" title="Canvas">
+            <Workflow className="size-3.5 sm:hidden" /><span className="hidden sm:inline">Canvas</span>
           </button>
-          <button className={tabClass(workflowView === "outputs")} onClick={() => onWorkflowViewChange("outputs")}>
-            Outputs
+          <button className={tabClass(workflowView === "outputs")} onClick={() => onWorkflowViewChange("outputs")} aria-label="Outputs" title="Outputs">
+            <Images className="size-3.5 sm:hidden" /><span className="hidden sm:inline">Outputs</span>
           </button>
         </div>
         <button
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-sm text-xs font-semibold border border-border cursor-pointer transition-all bg-surface text-foreground hover:bg-surface-sunken disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3.5 rounded-sm text-xs font-semibold border border-border cursor-pointer transition-all bg-surface text-foreground hover:bg-surface-sunken disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={saveWorkflow}
           disabled={!activeWorkflow}
+          aria-label="Save"
+          title="Save"
         >
-          Save
+          <Save className="size-3.5 sm:hidden" /><span className="hidden sm:inline">Save</span>
         </button>
         <button
-          className="inline-flex items-center gap-1.5 px-5 py-1.5 rounded-sm text-xs font-semibold border-none cursor-pointer transition-all bg-primary text-on-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-1.5 h-8 px-3 sm:px-5 rounded-sm text-xs font-semibold border-none cursor-pointer transition-all bg-primary text-on-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={executeWorkflow}
           disabled={!activeWorkflow || executing}
         >
@@ -49,17 +52,20 @@ export function Toolbar({ workflowView, onWorkflowViewChange }: Props) {
         </button>
         {lastRunResults.length > 0 && (
           <button
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold border border-border cursor-pointer bg-surface text-foreground hover:bg-surface-sunken"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-sm text-xs font-semibold border border-border cursor-pointer bg-surface text-foreground hover:bg-surface-sunken"
             onClick={() => setShowResults(true)}
+            aria-label={`Last run (${lastRunResults.length})`}
             title="Reopen the most recent run's results"
           >
-            Last run ({lastRunResults.length})
+            <History className="size-3.5 sm:hidden" />
+            <span className="sm:hidden">{lastRunResults.length}</span>
+            <span className="hidden sm:inline">Last run ({lastRunResults.length})</span>
           </button>
         )}
       </div>
 
       <Dialog open={showResults} onOpenChange={setShowResults}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Last run · {lastRunResults.length} output{lastRunResults.length === 1 ? "" : "s"}</DialogTitle>
           </DialogHeader>

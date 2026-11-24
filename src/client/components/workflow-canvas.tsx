@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type DragEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   ReactFlow,
   Background,
@@ -9,6 +9,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Plus } from "lucide-react";
 import { useWorkflow } from "../context";
+import { useNodeTypes } from "./sidebar";
 import { PromptNode } from "./nodes/prompt-node";
 import { GenerateNode } from "./nodes/generate-node";
 import { ImageInputNode } from "./nodes/image-input-node";
@@ -40,6 +41,22 @@ export function WorkflowCanvas() {
   );
 
   const { screenToFlowPosition } = useReactFlow();
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const nodeTypeEntries = useNodeTypes();
+  const [nodeMenuOpen, setNodeMenuOpen] = useState(false);
+  // Read once: the canvas only needs it to pick its opening view.
+  const isPhone = useMemo(() => window.matchMedia("(max-width: 767px)").matches, []);
+
+  // Touch has no drag and drop, so phones add a node by tap, centred in view.
+  const addNodeAtCenter = useCallback((type: string) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const center = rect
+      ? screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+      : undefined;
+    // A node's position is its top-left corner; shift by about half a node.
+    addNode(type, center && { x: center.x - 110, y: center.y - 60 });
+    setNodeMenuOpen(false);
+  }, [addNode, screenToFlowPosition]);
 
   const onDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -119,7 +136,7 @@ export function WorkflowCanvas() {
   }, [nodes, edges]);
 
   return (
-    <div className="flex-1 relative" onDragOver={onDragOver} onDrop={onDrop}>
+    <div ref={canvasRef} className="flex-1 relative" onDragOver={onDragOver} onDrop={onDrop}>
       <ReactFlow
         nodes={decoratedNodes}
         edges={decoratedEdges}
@@ -131,11 +148,47 @@ export function WorkflowCanvas() {
         snapGrid={[16, 16]}
         defaultEdgeOptions={{ animated: true, type: "smoothstep" }}
         deleteKeyCode={["Backspace", "Delete"]}
+        // A phone screen is narrower than most graphs: open on all of it.
+        fitView={isPhone}
+        fitViewOptions={{ maxZoom: 1, padding: 0.1 }}
       >
         <Background gap={16} size={1} />
         <Controls />
 
       </ReactFlow>
+
+      <div className="md:hidden absolute top-3 left-3 z-10">
+        <button
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-sm text-xs font-semibold bg-surface border border-border text-foreground shadow-sm cursor-pointer"
+          aria-expanded={nodeMenuOpen}
+          onClick={() => setNodeMenuOpen((o) => !o)}
+        >
+          <Plus className="size-3.5" /> Node
+        </button>
+        {nodeMenuOpen && (
+          <>
+            <div className="fixed inset-0" onClick={() => setNodeMenuOpen(false)} />
+            <div className="absolute top-full left-0 mt-1.5 w-60 max-h-[60dvh] overflow-y-auto p-1 bg-surface border border-border rounded-md shadow-md">
+              {nodeTypeEntries.map((nt) => {
+                const Icon = nt.icon;
+                return (
+                  <button
+                    key={nt.type}
+                    className="flex w-full items-center gap-2.5 px-2.5 py-2 rounded-sm text-left cursor-pointer hover:bg-surface-sunken"
+                    onClick={() => addNodeAtCenter(nt.type)}
+                  >
+                    <Icon className="size-4 shrink-0 text-muted" strokeWidth={2} />
+                    <span className="flex flex-col">
+                      <span className="text-xs font-semibold text-foreground">{nt.label}</span>
+                      <span className="text-[11px] text-muted">{nt.desc}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

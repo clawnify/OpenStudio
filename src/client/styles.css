@@ -117,12 +117,23 @@
 html,
 body,
 #app {
-  @apply h-full w-full overflow-hidden;
+  @apply h-dvh w-full overflow-hidden;
 }
 
 body {
   @apply bg-background text-foreground text-[13px] antialiased;
   font-family: var(--font-sans);
+}
+
+/* iOS zooms the page when a field under 16px takes focus, and inside the
+   homepage frame that zooms the host page too. Phones get 16px fields. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────── */
@@ -194,6 +205,12 @@ body {
 }
 .react-flow__handle:hover {
   border-color: var(--color-ring) !important;
+}
+/* A 10px handle is too small to hit with a finger. */
+@media (pointer: coarse) {
+  .react-flow__handle {
+    @apply !w-4 !h-4;
+  }
 }
 
 /* Selected node: highlight touching edges + enlarge feeding handles in the
